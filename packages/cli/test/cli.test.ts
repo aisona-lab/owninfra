@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/index.js";
+import { generate } from "../src/project.js";
 
 const example = fileURLToPath(new URL("../../../examples/approvals/blueprint.yaml", import.meta.url));
 
@@ -83,6 +84,36 @@ describe("cli", () => {
 
   it("covers every invalid fixture", () => {
     expect(readdirSync(fixtures).sort()).toEqual(Object.keys(expectedFirstError).sort());
+  });
+
+  it("init copies the example and is idempotent", async () => {
+    const dir = join(mkdtempSync(join(tmpdir(), "owninfra-")), "approvals");
+    expect((await cli("init", "--example", "approvals", dir)).code).toBe(0);
+    expect(readFileSync(join(dir, "blueprint.yaml"), "utf8")).toBe(readFileSync(example, "utf8"));
+    expect(await cli("init", "--example", "approvals", dir)).toMatchObject({ code: 0, out: `${join(dir, "blueprint.yaml")} already matches the 'approvals' example` });
+    writeFileSync(join(dir, "blueprint.yaml"), "mine\n");
+    expect((await cli("init", "--example", "approvals", dir)).code).toBe(1);
+    expect(readFileSync(join(dir, "blueprint.yaml"), "utf8")).toBe("mine\n");
+    expect((await cli("init", "--example", "nope", dir)).code).toBe(1);
+  });
+
+  it("generate refuses a hand-edited generated file and --force overrides it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "owninfra-"));
+    writeFileSync(join(dir, "blueprint.yaml"), readFileSync(example, "utf8"));
+    const gen = async (...a: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await generate(a, { out: (l) => out.push(l), err: (l) => err.push(l) }, dir);
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    expect((await gen()).code).toBe(0);
+    expect((await gen()).out).toMatch(/^generate: 0 written, \d+ unchanged, 0 user files created, 0 deleted$/);
+    writeFileSync(join(dir, "docker-compose.yml"), "edited\n");
+    const refused = await gen();
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("docker-compose.yml");
+    expect((await gen("--force")).code).toBe(0);
+    expect(readFileSync(join(dir, "docker-compose.yml"), "utf8")).toContain("postgres:16");
   });
 
   it("rejects planned and unknown commands", async () => {

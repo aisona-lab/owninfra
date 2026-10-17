@@ -1,17 +1,21 @@
 import { readFile } from "node:fs/promises";
 import { validateBlueprintYaml, type Issue } from "@owninfra/blueprint-schema";
+import { dev, generate, init } from "./project.js";
 
 export interface Io {
   out: (line: string) => void;
   err: (line: string) => void;
 }
 
-const planned = ["init", "plan", "generate", "dev", "verify", "deploy", "destroy"] as const;
+const planned = ["plan", "verify", "deploy", "destroy"] as const;
 
 const usage = `Usage: owninfra <command> [options]
 
 Commands:
   validate [file]   Validate a blueprint (default: blueprint.yaml)
+  init --example <name> [dir]  Start a project from an example blueprint
+  generate [--force]  Write the app from ./blueprint.yaml
+  dev [--reset] [--db-only] [--port n]  Run Postgres, migrate, seed and next dev
 ${planned.map((c) => `  ${c.padEnd(16)}  not implemented yet`).join("\n")}
 `;
 
@@ -22,6 +26,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
     return command ? 0 : 1;
   }
   if (command === "validate") return validate(args[0] ?? "blueprint.yaml", io);
+  if (command === "init") return init(args, io);
+  if (command === "generate") return generate(args, io);
+  if (command === "dev") return dev(args, io);
   if ((planned as readonly string[]).includes(command)) {
     io.err(`owninfra ${command}: not implemented yet`);
     return 2;
