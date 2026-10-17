@@ -58,28 +58,27 @@ describe("cli", () => {
   });
 
   const fixtures = fileURLToPath(new URL("fixtures/invalid/", import.meta.url));
-  it.each([
-    ["alias.yaml", "error version: Invalid input"],
-    ["badref.yaml", "error entities[2].fields[5].to: unknown entity 'Supplier'"],
-    ["deadend.yaml", "error entities[2].workflow.states: state 'stuck' has no outgoing transitions and is not final"],
-    ["empty.yaml", "error (root): Expected object, received null"],
-    ["list.yaml", "error (root): Expected object, received array"],
-    ["malformed.yaml", "error (yaml): Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:"],
-    ["nodev.yaml", "error environments: a 'dev' environment is required"],
-    ["permscalar.yaml", "error permissions.Vendor.manager: must be a list of actions (create, read, update, delete) or a map of action to rule"],
-    ["types.yaml", "error roles: Expected array, received string"],
-    ["unreach.yaml", "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'"],
-  ])("rejects %s", async (name, line) => {
+  const expectedFirstError: Record<string, string> = {
+    "alias.yaml": "error version: Required",
+    "badref.yaml": "error entities[2].fields[5].to: unknown entity 'Supplier'",
+    "deadend.yaml": "error entities[2].workflow.states: state 'stuck' has no outgoing transitions and is not final",
+    "empty.yaml": "error (root): Expected object, received null",
+    "list.yaml": "error (root): Expected object, received array",
+    "malformed.yaml": "error (yaml): Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:",
+    "nodev.yaml": "error environments: a 'dev' environment is required",
+    "permscalar.yaml": "error permissions.Vendor.manager: must be a list of actions (create, read, update, delete) or a map of action to rule",
+    "types.yaml": "error roles: Expected array, received string",
+    "unreach.yaml": "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
+  };
+
+  it.each(Object.entries(expectedFirstError))("rejects %s", async (name, line) => {
     const r = await cli("validate", join(fixtures, name));
     expect(r.code).toBe(1);
     expect(r.err.split("\n").find((l) => l.startsWith("error "))).toBe(line);
   });
 
   it("covers every invalid fixture", () => {
-    expect(readdirSync(fixtures).sort()).toEqual([
-      "alias.yaml", "badref.yaml", "deadend.yaml", "empty.yaml", "list.yaml",
-      "malformed.yaml", "nodev.yaml", "permscalar.yaml", "types.yaml", "unreach.yaml",
-    ]);
+    expect(readdirSync(fixtures).sort()).toEqual(Object.keys(expectedFirstError).sort());
   });
 
   it("rejects planned and unknown commands", async () => {

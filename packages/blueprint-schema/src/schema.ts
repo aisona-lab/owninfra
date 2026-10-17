@@ -117,7 +117,9 @@ const Environment = z
 
 export const Blueprint = z
   .object({
-    version: z.union([z.literal(0.1), z.literal("0.1")]),
+    version: z.union([z.literal(0.1), z.literal("0.1")], {
+      errorMap: (_, ctx) => ({ message: ctx.data === undefined ? "Required" : "must be 0.1" }),
+    }),
     app: z
       .object({
         name: id,
