@@ -82,6 +82,9 @@ describe("cli", () => {
     "seedrequired.yaml": "error seed.Vendor[0]: missing required field 'tax_id'",
     "seedpattern.yaml": "error seed.Department[1].code: must match ^[A-Z]{2,6}$",
     "longfield.yaml": "error entities[2].fields[6].name: column name 'fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff' makes the constraint name 'purchase_requests_fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_fkey' longer than 63 bytes; shorten the field name",
+    "tablepg.yaml": "error entities[1].table: table name 'pg_class' starts with 'pg_', which Postgres reserves for its catalog (pg_catalog is searched first, so it would shadow the table)",
+    "tablelong.yaml": "error entities[1].table: table name 'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv' is longer than 63 bytes; shorten the table name",
+    "seedunique.yaml": "error seed.Department[1].code: duplicate value \"ENG\" in unique field 'code' (also in seed.Department[0])",
     "unreach.yaml": "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
   };
 

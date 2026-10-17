@@ -224,7 +224,8 @@ function checkNames(bp: RawBlueprint, errors: Issue[]) {
     const table = tableName(e.name, e.table);
     const tpath = e.table ? `entities[${ei}].table` : path;
     const tableProblem = sqlIdentifierProblem(table);
-    if (tableProblem) errors.push({ path: tpath, message: `table name ${tableProblem}` });
+    if (tableProblem)
+      errors.push({ path: tpath, message: `table name ${tableProblem}${e.table && tableProblem.includes("longer than") ? "; shorten the table name" : ""}` });
     if (systemTables.has(table)) errors.push({ path: tpath, message: `entity '${e.name}' maps to table '${table}', which is reserved for owninfra` });
     const clash = owners.get(table);
     if (clash && clash !== e.name) errors.push({ path, message: `entities '${clash}' and '${e.name}' both map to table '${table}'` });
@@ -246,7 +247,7 @@ function checkNames(bp: RawBlueprint, errors: Issue[]) {
     if (tooLong.length)
       errors.push({
         path: tpath,
-        message: `table name '${table}' is too long for Postgres constraint names on ${tooLong.map((c) => `'${c}'`).join(", ")} (limit ${maxIdentifier} bytes for '<table>_<column>_fkey'); shorten the entity name`,
+        message: `table name '${table}' is too long for Postgres constraint names on ${tooLong.map((c) => `'${c}'`).join(", ")} (limit ${maxIdentifier} bytes for '<table>_<column>_fkey'); ${e.table ? "shorten the table name" : "shorten the entity name"}`,
       });
   });
 }
@@ -309,6 +310,17 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]) {
     }
     const names = new Set(entity.fields.map((f) => f.name));
     const refs = new Map(entity.fields.flatMap((f) => (f.type === "ref" ? [[f.name, f.to] as const] : [])));
+    for (const f of entity.fields.filter((x) => x.unique)) {
+      const seen = new Map<string, number>();
+      rows.forEach((row, i) => {
+        if (row[f.name] === undefined || row[f.name] === null) return;
+        const v = JSON.stringify(row[f.name]);
+        const first = seen.get(v);
+        if (first !== undefined)
+          errors.push({ path: `seed.${key}[${i}].${f.name}`, message: `duplicate value ${v} in unique field '${f.name}' (also in seed.${key}[${first}])` });
+        else seen.set(v, i);
+      });
+    }
     rows.forEach((row, i) => {
       for (const f of entity.fields)
         if (f.required && f.default === undefined && f.type !== "files" && row[f.name] === undefined)

@@ -69,6 +69,12 @@ describe("naming", () => {
       Child: "children",
       Analysis: "analyses",
       Equipment: "equipment",
+      Alias: "aliases",
+      Aliases: "aliases",
+      Leaf: "leaves",
+      Leaves: "leaves",
+      EmailAlias: "email_aliases",
+      PgStat: "pg_stats",
     };
     expect(Object.fromEntries(Object.keys(cases).map((k) => [k, tableName(k)]))).toEqual(cases);
     expect(model().entities.get("PurchaseRequest" as EntityName)!.table).toBe("purchase_requests");

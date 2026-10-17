@@ -19,6 +19,18 @@ const irregular: Readonly<Record<string, string>> = {
   foot: "feet",
   datum: "data",
   index: "indices",
+  alias: "aliases",
+  bias: "biases",
+  leaf: "leaves",
+  half: "halves",
+  knife: "knives",
+  life: "lives",
+  wife: "wives",
+  shelf: "shelves",
+  wolf: "wolves",
+  thief: "thieves",
+  loaf: "loaves",
+  calf: "calves",
   matrix: "matrices",
   vertex: "vertices",
 };
@@ -47,6 +59,7 @@ export const tableName = (entity: string, override?: string) => override ?? plur
 export function sqlIdentifierProblem(name: string): string | undefined {
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) return `'${name}' must be lowercase snake_case to be a SQL identifier`;
   if (reserved.has(name)) return `'${name}' is a reserved word in Postgres`;
+  if (name.startsWith("pg_")) return `'${name}' starts with 'pg_', which Postgres reserves for its catalog (pg_catalog is searched first, so it would shadow the table)`;
   if (Buffer.byteLength(name) > maxIdentifier) return `'${name}' is longer than ${maxIdentifier} bytes`;
   return undefined;
 }
