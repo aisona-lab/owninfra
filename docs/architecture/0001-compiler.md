@@ -1,6 +1,6 @@
 # 0001: Compiler architecture
 
-Status: proposed. Covers MVP week 1 (`init`, `generate`, `dev` for the approvals example). Deploy, the harness beyond L0, and the agent are out of scope here except where they constrain the shapes below.
+Status: approved, amended after Eng Verifier review (round 1). Covers MVP week 1 (`init`, `generate`, `dev` for the approvals example). Deploy, the harness beyond L0, and the agent are out of scope here except where they constrain the shapes below.
 
 ## Context
 
@@ -81,7 +81,27 @@ The IR is the model rearranged into what each emitter consumes. It holds no new 
 - `routes` and `pages`: list, detail, create and edit per entity, plus the "my pending items" inbox and the admin audit view.
 - `audit`: enabled flag and the `audit_events` table definition.
 
-Every collection in the IR is an array sorted by a stable key. No `Map` iteration order and no object key order is relied on during emission.
+Every collection in the IR is an array. No `Map` iteration order and no object key order is relied on during emission.
+
+### Which orders carry meaning
+
+Some YAML orders are the author's intent and are preserved. The rest are sorted.
+
+| Order | Meaning | Treatment |
+| --- | --- | --- |
+| Fields within an entity | Form order, list column fallback, SQL column order | Preserved |
+| `list.columns` | Column order in the list view | Preserved |
+| Workflow states | Display order of states, order of the SQL check constraint values | Preserved |
+| Enum values | Option order in forms, SQL check order | Preserved |
+| Entities | None | Sorted by name |
+| Roles | None | Sorted by id |
+| Transitions | None | Sorted by id |
+| Permission keys (entity, role, action) | None | Sorted |
+| Seed rows | Insert order (stable ids are not derived from it) | Preserved |
+
+The order-independence test shuffles only the "None" rows. A shuffle of a preserved order is expected to change the output, and a separate test asserts that it does for fields.
+
+Sorting compares strings by UTF-16 code unit (`a < b`), never `localeCompare`, so the result does not depend on the host locale or ICU version. `parse` NFC-normalizes every identifier and label, so visually identical input produces identical bytes. The repository and the generated app carry a `.gitattributes` with `* text=auto eol=lf`, and `emit` writes only `\n`.
 
 ## Compiler stages
 
@@ -97,7 +117,7 @@ YAML text
 
 `emit(ir): FileSet` returns `ReadonlyArray<{ path: string; contents: string; zone: "managed" | "user" }>`, sorted by path. It is a pure function with no clock, no randomness, no environment and no filesystem reads. Templates are bundled as code, not read at runtime.
 
-`write(fileSet, outDir)` is the only side effect. It overwrites `managed` files and creates `user` files only if they are absent. That makes `generate` idempotent: running it twice with the same blueprint changes nothing on disk, and it never touches `src/custom/**`.
+`write(fileSet, outDir)` is the only side effect. See Zones and the manifest below. Running `generate` twice with the same blueprint changes nothing on disk.
 
 The current `checkSemantics` is replaced by `parse`. `validate` becomes `parseYaml -> Zod -> parse` and prints the same issues. The existing fixture table keeps guarding the messages.
 
@@ -109,17 +129,56 @@ Templates are TypeScript functions from an IR slice to a string, using tagged te
 - **Drizzle.** `src/lib/(generated)/schema.ts` comes from `tables`. Migrations are generated SQL files with deterministic names (`0000_init.sql`), not `drizzle-kit generate` output, so the compiler stays pure and offline. Later blueprint changes produce new numbered migrations by diffing two IRs. That diffing is v1.
 - **Workflow.** `src/lib/(generated)/workflows.ts` holds a transition table per entity. One server action, `transition(entity, id, transitionId)`, checks role, owner and separation of duties, plus required fields, inside one database transaction that also writes the audit event.
 - **Audit log.** Every mutation goes through one `withAudit` helper that writes `{ actor, entity, entityId, action, before, after, at }` in the same transaction. There is no trigger-based auditing, so the actor is always the authenticated user.
-- **Formatting.** Generated TS is printed with a pinned Prettier version as part of `emit`, so output is stable and readable without a post-processing step.
+- **Formatting.** Generated TS is printed with Prettier as part of `emit`. Prettier is called with an explicit options object and `config: false` semantics (no `resolveConfig`, no `.prettierrc`, no `.editorconfig` lookup), so a config file in the user's tree cannot change the bytes. The exact Prettier version is a pinned (non-range) dependency of the compiler and is recorded in `owninfra.lock.json`. A Prettier upgrade is its own PR that bumps the pin and runs `pnpm goldens:update`, so the diff reviews as pure formatting.
 
 Templates live in `packages/templates`. The compiler imports them as plain functions, so `tsc` type-checks templates against the IR.
 
 ## Determinism and golden tests
 
-- **Golden test.** `generate examples/approvals/blueprint.yaml` into a temp dir and compare every file byte for byte with `packages/compiler/test/golden/approvals/`. A `--update` script rewrites the goldens, and the diff is reviewed in the PR.
+- **Golden test.** `generate examples/approvals/blueprint.yaml` into a temp dir and compare every file byte for byte with `packages/compiler/test/golden/approvals/`. `pnpm goldens:update` rewrites the goldens, and the diff is reviewed in the PR.
 - **Repeatability test.** Run `emit(lower(parse(...)))` twice in one process and once in a fresh process, and assert identical `FileSet` hashes.
-- **Order independence test.** Shuffle the order of entities, roles, fields and permission keys in the YAML, and assert the same output hash. This catches any reliance on input order.
+- **Order independence test.** Shuffle the orders that carry no meaning (entities, roles, transitions, permission keys) and assert the same output hash. Shuffling fields must change the hash.
 - **Compile test (L1).** CI runs `tsc --noEmit`, ESLint and the generated Vitest suite inside the generated app.
 - Generated files carry no timestamps or tool versions. The owninfra version appears once, in `owninfra.lock.json`, so a version bump is one visible diff line.
+
+
+## Naming
+
+All naming decisions live in `parse`, so `lower` stays total and emitters never rename.
+
+- Table names are the snake_case plural of the entity (`PurchaseRequest` becomes `purchase_requests`, `Category` becomes `categories`). Column names are the field names, which the schema already restricts to lowercase snake case.
+- Kebab-case ids (`my-requests`) are allowed for roles, states and pages but are rejected for field names, because they become SQL columns and TS properties.
+- A table or column name that is a Postgres reserved word (`user`, `order`, `group`, `select` and the rest of the reserved list) is rejected with a message naming the word. Plurals are checked too (`users` is fine, `User` alone never becomes a table name).
+- A table name plus the longest derived constraint name (`<table>_<column>_fkey`, `<table>_<column>_key`) must fit in Postgres's 63-byte identifier limit, or `parse` rejects it.
+- Field names that clash with system columns (`id`, `created_at`, `updated_at`, `created_by`) are rejected.
+
+Each rule has a fixture in `packages/cli/test/fixtures/invalid/` and a row in the fixture table.
+
+## Zones and the manifest
+
+Every path in the output has exactly one zone.
+
+- **generated**: owned by `owninfra`. Everything under `app/src/**/(generated)/**`, `app/drizzle/`, `docker-compose.yml` and the app's config files. Each text file starts with a do-not-edit header naming `owninfra generate` (JSON files, which cannot carry a comment, are listed in the manifest instead).
+- **user**: owned by the developer. `app/src/custom/**` and `blueprint.yaml`. `generate` creates a user file only when it is absent and never overwrites or deletes one.
+
+`emit` asserts that no path falls in both zones and that no two routes resolve to the same URL (for example an entity whose plural collides with `admin` or `inbox`). Both are compiler bugs or blueprint errors, never silent overwrites. User pages live under `app/src/app/(custom)/`, a separate route group; `emit` reserves the generated URL prefixes and the golden test fails if a generated route lands in `(custom)`.
+
+`owninfra.lock.json` holds the owninfra version, the Prettier version, and a manifest of `{ path: sha256 }` for every generated file. `write` reconciles against it:
+
+1. For each generated file already on disk, compare its hash with the manifest. A mismatch means it was hand-edited since the last generate, and `generate` refuses with the list of edited files unless `--force` is passed.
+2. Write each file through a temp path and rename, skipping files whose bytes are already identical.
+3. Delete orphans, meaning files listed in the previous manifest but absent from the new file set, if their hash still matches (an edited orphan is the same refusal as step 1).
+4. Write the new manifest last.
+
+A crash at any point leaves files whose hashes either match the old manifest or the new file set, so the next run converges. A dirty git tree is only a warning.
+
+## User code API
+
+User code imports only from `app/src/lib/owninfra`, a versioned surface (`export const apiVersion = 1`) that exposes the session helper, the typed repository functions (`list`, `get`, `create`, `update`, `remove`, `transition`, each audited and guarded) and the generated types. The raw database client lives in `(generated)/db.ts`, and the generated ESLint config has a `no-restricted-imports` rule that blocks importing it from `src/custom/**`. The golden test writes a sample user file that uses the public API and runs `tsc` over the generated app, so a breaking change to the API fails the build.
+
+## Dev database drift
+
+`dev` stores the hash of the IR it applied in a one-row `owninfra_meta` table. On start, if the stored hash differs from the current IR's, `dev` refuses with a message that names the change ("the blueprint changed since this database was created; run `owninfra dev --reset` to drop and recreate it") and does not touch the database. `--reset` drops and recreates the schema, migrates and seeds. With a matching hash, migrate and seed are no-ops, so `dev` can be restarted at will. Diffing IRs into incremental migrations is v1.
 
 ## Running the approvals example locally
 
@@ -131,7 +190,7 @@ npx owninfra dev                        # docker compose up postgres, migrate, s
 ```
 
 - **Database.** `docker-compose.yml` runs Postgres 16. `dev` waits for health, applies the generated migrations, and loads `seed` (departments plus `seed.users` when `seed_users: true`).
-- **Auth stub.** In production, Auth.js uses the Cognito OIDC provider. In `dev`, Auth.js uses a credentials provider that lists the seeded users and signs in as one with no password. Roles come from `seed.users[].roles`, the same claim shape that Cognito groups will produce. The stub provider is only emitted when `NODE_ENV !== "production"`, and the production build fails if it is configured.
+- **Auth stub.** The stub is always emitted, so the output of `generate` never depends on `NODE_ENV` or any other environment. It is gated at runtime: Auth.js uses a credentials provider over `seed.users` only when `OWNINFRA_AUTH_STUB=1`, signing in as a seeded user with no password. Roles come from `seed.users[].roles`, the same claim shape Cognito groups will produce. Otherwise Auth.js uses the Cognito OIDC provider. `next.config` throws during `next build` when `OWNINFRA_AUTH_STUB` is set, and the auth module throws at startup when the stub is set and `NODE_ENV === "production"`, so a production artifact cannot carry an enabled stub.
 - **Workflow.** You can walk the full approvals flow by switching users: requester creates and submits, manager approves, finance approves and marks paid. Trying `manager_approve` as the requester returns 403 from the same guard that production uses.
 - **Audit log.** Every step above appears in the admin audit view, with before and after values.
 
@@ -144,10 +203,10 @@ No AWS account is needed for any of this.
 - **One audit helper over database triggers.** The actor is known, and the behavior is testable in unit tests. The cost is that a raw SQL write bypasses auditing, so the generated app exposes no raw SQL path.
 - **Dropping v1 fields at `parse`.** No partial support can leak in. The cost is that users see warnings for fields they wrote.
 
-## Open questions
+## Resolved questions
 
-- Whether `generate` should refuse to run on a dirty git tree. The default is a warning.
-- The Prettier version pin and how it is upgraded without breaking every golden at once.
+- Dirty git tree: a warning, not a refusal. The refusal is for hand-edited generated files (see the manifest), overridable with `--force`.
+- Prettier upgrades: the version stays pinned, and an upgrade is a dedicated PR that regenerates the goldens with `pnpm goldens:update`.
 
 ## Week 1 plan
 
