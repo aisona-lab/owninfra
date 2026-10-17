@@ -114,7 +114,7 @@ describe("validateBlueprint", () => {
     bp.permissions.PurchaseRequest.manager = { read: "everyone" };
     expect(messages(bp)).toEqual([
       "permissions.Vendor.manager: must be a list of actions (create, read, update, delete) or a map of action to rule",
-      "permissions.PurchaseRequest.manager: must be a list of actions (create, read, update, delete) or a map of action to rule",
+      "permissions.PurchaseRequest.manager.read: must be true, false, 'all', 'own' or { own, in_states }",
     ]);
   });
 
