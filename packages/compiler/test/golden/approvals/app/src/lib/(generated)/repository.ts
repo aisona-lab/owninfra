@@ -144,13 +144,17 @@ export async function requireTransition(user: User, table: string, id: string, t
   if (!row || !authorize(user, entity, "read", row)) throw new HttpError(404, "not found");
 }
 
+export async function rowLabels(user: User, entity: EntityDef): Promise<Record<string, string>> {
+  const rows = readScope(user, entity) ? await list(user, entity.table) : [];
+  return Object.fromEntries(rows.map((r) => [r.id, String(r[entity.display] ?? r.id)]));
+}
+
 export async function refLabels(user: User, entity: EntityDef): Promise<Record<string, Record<string, string>>> {
   const out: Record<string, Record<string, string>> = {};
   for (const c of entity.columns) {
     const target = c.input === "ref" && c.ref ? entityByTable(c.ref) : undefined;
     if (!target) continue;
-    const rows = readScope(user, target) ? await list(user, target.table) : [];
-    out[c.name] = Object.fromEntries(rows.map((r) => [r.id, String(r[target.display] ?? r.id)]));
+    out[c.name] = await rowLabels(user, target);
   }
   return out;
 }

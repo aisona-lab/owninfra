@@ -7,6 +7,7 @@ export const generatedFiles: ReadonlySet<string> = new Set([
   "app/package.json",
   "app/scripts/dev-db.mjs",
   "app/src/app/api/auth/[...nextauth]/route.ts",
+  "app/src/app/favicon.ico/route.ts",
   "app/src/app/layout.tsx",
   "app/src/auth.ts",
   "app/src/lib/owninfra/index.ts",
