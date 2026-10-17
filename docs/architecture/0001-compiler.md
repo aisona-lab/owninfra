@@ -115,7 +115,7 @@ YAML text
   -> disk             (write, the only IO)
 ```
 
-`emit(ir): FileSet` returns `ReadonlyArray<{ path: string; contents: string; zone: "managed" | "user" }>`, sorted by path. It is a pure function with no clock, no randomness, no environment and no filesystem reads. Templates are bundled as code, not read at runtime.
+`emit(ir): FileSet` returns `ReadonlyArray<{ path: string; contents: string; zone: "generated" | "user" }>`, sorted by path. It is a pure function with no clock, no randomness, no environment and no filesystem reads. Templates are bundled as code, not read at runtime.
 
 `write(fileSet, outDir)` is the only side effect. See Zones and the manifest below. Running `generate` twice with the same blueprint changes nothing on disk.
 
