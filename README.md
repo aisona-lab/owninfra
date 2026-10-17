@@ -54,6 +54,17 @@ owninfra dev             # docker compose Postgres, migrate, seed, next dev on :
 
 `version` must be `0.1`. YAML reads the number `0.10` as `0.1`, so it is accepted, but the string `"0.10"` is rejected.
 
+## Generated app behavior
+
+- **Input values.** Seeds, forms and the JSON API all go through one codec per field type (`packages/blueprint-schema/src/codecs.ts`, shipped unchanged to `app/src/lib/(generated)/codecs.ts`). Form `datetime` inputs have no zone and are read as UTC. Times are displayed in UTC.
+- **Create forms** show only the fields that can be set at create. A field that a transition requires (such as `rejection_reason`) is set by that transition, unless the field is itself required. The API rejects such a field on create with 422.
+- **Validation errors** come back as 422 with `{ "error": "...", "fields": { "<field>": "<message>" } }`. Forms show each message next to its field.
+- **Transitions:** `POST /api/e/<table>/<id>/transitions/<transition>` checks the request in this order:
+  1. The transition exists on the entity. If not: 404 `unknown transition`, with or without a body.
+  2. The row exists and is readable. If not: 404 `not found`.
+  3. The body is valid JSON (400) and sets only the transition's `require_fields` (422).
+  4. State, role and separation-of-duties rules (409, 403 or 422).
+
 ## Repo layout
 
 ```
