@@ -118,6 +118,14 @@ describe("validateBlueprint", () => {
     ]);
   });
 
+  it("explains a missing or unsupported version", () => {
+    const bp = example();
+    bp.version = 0.2;
+    expect(messages(bp)).toEqual(["version: must be 0.1"]);
+    delete bp.version;
+    expect(messages(bp)).toEqual(["version: Required"]);
+  });
+
   it("flags duplicate names", () => {
     const bp = example();
     bp.roles.push({ id: "admin" });
