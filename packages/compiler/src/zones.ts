@@ -25,7 +25,7 @@ const insideGeneratedGroup = (path: string) => {
 };
 
 export function isGeneratedPath(path: string): boolean {
-  if (path.split("/").some((s) => s === "" || s === "." || s === "..")) return false;
+  if (path.split("/").some((s) => s === "" || s === "." || s === "..") || isUserPath(path)) return false;
   return generatedFiles.has(path) || generatedDirs.some((d) => path.startsWith(d) && path.length > d.length) || insideGeneratedGroup(path);
 }
 

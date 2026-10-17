@@ -35,7 +35,7 @@ function strayFiles(dir: string, known: Set<string>): string[] {
       const child = rel ? `${rel}/${d.name}` : d.name;
       const zone = inZone || d.name === "(generated)";
       if (d.isDirectory()) walk(child, zone);
-      else if (zone && !known.has(child)) out.push(child);
+      else if (zone && isGeneratedPath(child) && !known.has(child)) out.push(child);
     }
   };
   walk("app/src", false);
