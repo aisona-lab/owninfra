@@ -1,6 +1,6 @@
 import type { Blueprint as RawBlueprint } from "./schema.js";
 import { crudActions } from "./schema.js";
-import { canonicalDecimal, parseDecimal } from "./decimal.js";
+import { parseValue, uniqueKey, type Canonical } from "./codecs.js";
 import { isSystemColumn, maxIdentifier, sqlIdentifierProblem, tableName } from "./naming.js";
 
 export interface Issue {
@@ -26,8 +26,10 @@ function check(bp: RawBlueprint): { errors: Issue[]; warnings: Issue[] } {
     entity.fields.forEach((f, fi) => {
       const p = `${base}.fields[${fi}]`;
       if (f.type === "ref" && !entities.has(f.to)) errors.push({ path: `${p}.to`, message: `unknown entity '${f.to}'` });
-      if (f.type === "enum" && f.default !== undefined && !f.values.includes(String(f.default)))
-        errors.push({ path: `${p}.default`, message: `'${f.default}' is not one of the enum values` });
+      if (f.default !== undefined && f.type !== "files" && f.type !== "ref") {
+        const d = parseValue(f, f.default);
+        if (!d.ok) errors.push({ path: `${p}.default`, message: `'${f.default}' ${d.error}` });
+      }
       if (f.type === "files") warnings.push({ path: p, message: "'files' fields are v1 and ignored by the MVP" });
       if (f.visible_when) warnings.push({ path: `${p}.visible_when`, message: "conditional visibility is v1 and ignored by the MVP" });
     });
@@ -210,10 +212,10 @@ export type ParseResult =
 
 export function parse(raw: RawBlueprint): ParseResult {
   const { errors, warnings } = check(raw);
-  checkSeed(raw, errors);
+  const seedRows = checkSeed(raw, errors);
   checkNames(raw, errors);
   if (errors.length) return { ok: false, errors, warnings };
-  return { ok: true, model: build(raw), warnings };
+  return { ok: true, model: build(raw, seedRows), warnings };
 }
 
 const systemTables = new Set(["audit_events", "owninfra_meta"]);
@@ -253,57 +255,8 @@ function checkNames(bp: RawBlueprint, errors: Issue[]) {
   });
 }
 
-function seedValueProblem(f: RawBlueprint["entities"][number]["fields"][number], v: unknown): string | undefined {
-  if (v === null) return f.required ? "is required and cannot be null" : undefined;
-  switch (f.type) {
-    case "bool":
-      return typeof v === "boolean" ? undefined : "must be a boolean";
-    case "int":
-      return Number.isInteger(v) ? range(f, v as number) : "must be an integer";
-    case "decimal": {
-      const d = parseDecimal(v);
-      return d ? range(f, Number(`${d.negative ? "-" : ""}${d.digits}e${d.exponent}`)) : "must be a number";
-    }
-    case "date":
-      return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? undefined : "must be a date (YYYY-MM-DD)";
-    case "datetime":
-      return typeof v === "string" && !Number.isNaN(Date.parse(v)) ? undefined : "must be an ISO date-time";
-    case "enum":
-      return f.values.includes(String(v)) ? undefined : `must be one of ${f.values.join(", ")}`;
-    case "files":
-      return "files cannot be seeded";
-    case "ref":
-      return undefined;
-    default: {
-      if (typeof v !== "string") return "must be a string";
-      if (f.type === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return "must be an email address";
-      if (f.max !== undefined && v.length > f.max) return `must be at most ${f.max} characters`;
-      if (f.pattern !== undefined && !new RegExp(f.pattern).test(v)) return `must match ${f.pattern}`;
-      return undefined;
-    }
-  }
-}
-
-function uniqueKey(f: RawBlueprint["entities"][number]["fields"][number], v: unknown): string | null {
-  if (v === undefined || v === null || seedValueProblem(f, v)) return null;
-  switch (f.type) {
-    case "int":
-    case "decimal":
-      return canonicalDecimal(v, f.type === "decimal" ? f.scale : 0);
-    case "bool":
-      return String(v === true);
-    default:
-      return String(v);
-  }
-}
-
-function range(f: { min?: number; max?: number }, n: number): string | undefined {
-  if (f.min !== undefined && n < f.min) return `must be at least ${f.min}`;
-  if (f.max !== undefined && n > f.max) return `must be at most ${f.max}`;
-  return undefined;
-}
-
-function checkSeed(bp: RawBlueprint, errors: Issue[]) {
+function checkSeed(bp: RawBlueprint, errors: Issue[]): Map<string, Record<string, Canonical>[]> {
+  const canonical = new Map<string, Record<string, Canonical>[]>();
   const roles = new Set(bp.roles.map((r) => r.id));
   for (const [key, rows] of Object.entries(bp.seed ?? {})) {
     if (key === "users") {
@@ -322,43 +275,50 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]) {
       errors.push({ path: `seed.${key}`, message: `unknown entity '${key}'` });
       continue;
     }
-    const names = new Set(entity.fields.map((f) => f.name));
-    const refs = new Map(entity.fields.flatMap((f) => (f.type === "ref" ? [[f.name, f.to] as const] : [])));
-    for (const f of entity.fields.filter((x) => x.unique)) {
-      const seen = new Map<string, number>();
-      rows.forEach((row, i) => {
-        const raw = row[f.name] === undefined ? f.default : row[f.name];
-        const key2 = uniqueKey(f, raw);
-        if (key2 === null) return;
-        const first = seen.get(key2);
-        const shown = typeof raw === "string" ? `'${raw}'` : String(raw);
-        const how = row[f.name] === undefined ? " (from the field default)" : "";
-        if (first !== undefined)
-          errors.push({ path: `seed.${key}[${i}].${f.name}`, message: `duplicate value ${shown}${how} in unique field '${f.name}' (same as seed.${key}[${first}])` });
-        else seen.set(key2, i);
-      });
-    }
-    rows.forEach((row, i) => {
+    const fields = new Map(entity.fields.map((f) => [f.name, f]));
+    const parsed = rows.map((row, i) => {
+      const out: Record<string, Canonical> = {};
       for (const f of entity.fields)
         if (f.required && f.default === undefined && f.type !== "files" && row[f.name] === undefined)
           errors.push({ path: `seed.${key}[${i}]`, message: `missing required field '${f.name}'` });
-      for (const k of Object.keys(row)) {
-        const p = `seed.${key}[${i}].${k}`;
-        if (!names.has(k)) errors.push({ path: p, message: `unknown field '${k}'` });
-        else if (refs.has(k))
-          errors.push({ path: p, message: `seed rows cannot set ref field '${k}' (to ${refs.get(k)}): seeded rows get generated ids, so references between seeds are not supported yet` });
-        else {
-          const problem = seedValueProblem(entity.fields.find((f) => f.name === k)!, row[k]);
-          if (problem) errors.push({ path: p, message: problem });
+      for (const [k, raw] of Object.entries(row)) {
+        const f = fields.get(k);
+        if (!f) {
+          errors.push({ path: `seed.${key}[${i}].${k}`, message: `unknown field '${k}'` });
+          continue;
         }
+        const r = parseValue(f, raw);
+        if (r.ok) out[k] = r.value;
+        else errors.push({ path: `seed.${key}[${i}].${k}`, message: r.error });
       }
+      return out;
     });
+    for (const f of entity.fields.filter((x) => x.unique)) {
+      const def = f.default === undefined ? null : parseValue(f, f.default);
+      const seen = new Map<string, number>();
+      parsed.forEach((row, i) => {
+        const fromDefault = !(f.name in rows[i]);
+        const value = fromDefault ? (def?.ok ? def.value : null) : f.name in row ? row[f.name] : null;
+        if (value === null) return;
+        const k = uniqueKey(value);
+        const first = seen.get(k);
+        const shown = typeof value === "string" ? `'${value}'` : String(value);
+        if (first !== undefined)
+          errors.push({
+            path: `seed.${key}[${i}].${f.name}`,
+            message: `duplicate value ${shown}${fromDefault ? " (from the field default)" : ""} in unique field '${f.name}' (same as seed.${key}[${first}])`,
+          });
+        else seen.set(k, i);
+      });
+    }
+    canonical.set(key, parsed);
   }
+  return canonical;
 }
 
 const nonEmpty = <T>(xs: readonly T[]): NonEmpty<T> => xs as unknown as NonEmpty<T>;
 
-function build(bp: RawBlueprint): Model {
+function build(bp: RawBlueprint, seedRows: ReadonlyMap<string, Record<string, Canonical>[]>): Model {
   const entities = new Map<EntityName, Entity>();
   for (const e of bp.entities) {
     const fields = new Map<FieldName, Field>();
@@ -440,7 +400,7 @@ function build(bp: RawBlueprint): Model {
     const e = bp.environments[name];
     return e && { account: e.account, region: e.region, seedUsers: e.seed_users ?? false };
   };
-  const { users = [], ...rows } = bp.seed ?? {};
+  const users = bp.seed?.users ?? [];
   return {
     app: { name: bp.app.name, title: bp.app.title, locale: bp.app.locale ?? "en" },
     roles: new Map(bp.roles.map((r) => [r.id as RoleId, { description: r.description ?? "", isDefault: r.default ?? false }])),
@@ -448,7 +408,7 @@ function build(bp: RawBlueprint): Model {
     permissions,
     audit: { enabled: bp.audit?.enabled ?? false },
     seed: {
-      rows: new Map(Object.entries(rows).map(([k, v]) => [k as EntityName, v])),
+      rows: new Map([...seedRows].map(([k, v]) => [k as EntityName, v])),
       users: users.map((u) => ({ email: String(u.email), roles: nonEmpty((u.roles as string[]).map((r) => r as RoleId)) })),
     },
     environments: { dev: env("dev") as Env, prod: env("prod") },
