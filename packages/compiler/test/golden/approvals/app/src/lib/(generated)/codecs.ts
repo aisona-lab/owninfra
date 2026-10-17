@@ -13,7 +13,7 @@ export type FieldSpec = {
   values?: readonly string[] | null;
 };
 export type Canonical = string | number | boolean | null;
-export type Parsed = { ok: true; value: Canonical } | { ok: false; error: string };
+export type Parsed = { ok: true; value: Canonical | undefined } | { ok: false; error: string };
 type Codec = (field: FieldSpec, raw: unknown) => Parsed;
 
 const ok = (value: Canonical): Parsed => ({ ok: true, value });
@@ -142,13 +142,25 @@ export const codecs: Record<FieldType, Codec> = {
   files: () => fail("files are not supported yet"),
 };
 
-const invisible = /[\u200b-\u200d\u2060\ufeff]/g;
+const anyEdge = /[\s\u200b-\u200d\u2060\ufeff]/g;
+const ends = /^[\s\u200b-\u200d\u2060\ufeff]+|[\s\u200b-\u200d\u2060\ufeff]+$/g;
+const blankLinesBefore = /^(?:[ \t\u200b-\u200d\u2060\ufeff]*\n)+/;
+const blankLinesAfter = /(?:\n[ \t\u200b-\u200d\u2060\ufeff]*)+$/;
 
-export const normalizeText = (raw: string) => raw.replace(invisible, "").trim();
+export const isBlank = (raw: string) => raw.replace(anyEdge, "") === "";
+
+export const trimEnds = (raw: string) => raw.replace(ends, "");
+
+export function normalizeText(raw: string, type: FieldType): string {
+  const s = raw.replace(/\r\n/g, "\n");
+  return type === "text" ? s.replace(blankLinesBefore, "").replace(blankLinesAfter, "") : trimEnds(s);
+}
 
 export function parseValue(field: FieldSpec, raw: unknown): Parsed {
-  const value = typeof raw === "string" ? normalizeText(raw) : raw;
-  if (value === null || value === "") return field.required ? fail("is required") : ok(null);
+  if (raw === null) return field.required ? fail("is required") : ok(null);
+  if (typeof raw === "string" && isBlank(raw))
+    return field.required ? fail("is required") : { ok: true, value: undefined };
+  const value = typeof raw === "string" ? normalizeText(raw, field.type) : raw;
   return codecs[field.type](field, value);
 }
 

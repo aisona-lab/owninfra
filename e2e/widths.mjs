@@ -71,6 +71,25 @@ await Promise.all([fin.page.waitForURL(/vendors\/[0-9a-f-]{36}$/), fin.page.clic
 const formVendor = await (await fin.page.request.get(`${base}/api/e/vendors/${fin.page.url().split("/").pop()}`)).json();
 check(formVendor.contact_email === null, `form optional email " \\u200b " -> contact_email=${JSON.stringify(formVendor.contact_email)}`);
 
+const joined = ["👨‍👩‍👧", "می‌خواهم", "क्‍ष"];
+for (const v of joined) {
+  const r = await req.page.request.post(`${base}/api/e/purchase_requests`, { data: { title: `\u200b ${v} \ufeff`, amount: "1", department: dept, vendor: vendorId, justification: "j", currency: "", description: "first\r\n  second\r\n" } });
+  const body = await r.json();
+  check(r.status() === 201 && body.title === v && body.currency === "EUR" && body.description === "first\n  second", `API title ${JSON.stringify(v)} -> ${r.status()} title=${JSON.stringify(body.title)} currency=${body.currency} description=${JSON.stringify(body.description)}`);
+}
+
+await req.page.goto(`${base}/e/purchase_requests`);
+await req.page.fill("#f-title", `\u200b ${joined[1]} \ufeff`);
+await req.page.fill("#f-amount", "1");
+await req.page.fill("#f-justification", "j");
+await req.page.fill("#f-description", "first\n  second\n");
+await req.page.selectOption("#f-currency", "");
+await req.page.selectOption("#f-department", dept);
+await req.page.selectOption("#f-vendor", vendorId);
+await Promise.all([req.page.waitForURL(/purchase_requests\/[0-9a-f-]{36}$/), req.page.click("button:text-is('Create')")]);
+const viaForm = await (await req.page.request.get(`${base}/api/e/purchase_requests/${req.page.url().split("/").pop()}`)).json();
+check(viaForm.title === joined[1] && viaForm.currency === "EUR" && viaForm.description === "first\n  second", `form title ${JSON.stringify(joined[1])}, blank currency, CRLF description -> title=${JSON.stringify(viaForm.title)} currency=${viaForm.currency} description=${JSON.stringify(viaForm.description)}`);
+
 const pages = [
   ["requester@acme.example", "list", "/e/purchase_requests"],
   ["requester@acme.example", "create", "/e/purchase_requests#create", async (p) => p.click("button:text-is('Create')").then(() => p.locator(".field .error").first().waitFor())],

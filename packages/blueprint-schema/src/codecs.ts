@@ -1,4 +1,5 @@
-export type FieldType = "string" | "text" | "email" | "int" | "decimal" | "bool" | "date" | "datetime" | "enum" | "ref" | "files";
+export type FieldType =
+  "string" | "text" | "email" | "int" | "decimal" | "bool" | "date" | "datetime" | "enum" | "ref" | "files";
 export type FieldSpec = {
   name: string;
   type: FieldType;
@@ -11,7 +12,7 @@ export type FieldSpec = {
   values?: readonly string[] | null;
 };
 export type Canonical = string | number | boolean | null;
-export type Parsed = { ok: true; value: Canonical } | { ok: false; error: string };
+export type Parsed = { ok: true; value: Canonical | undefined } | { ok: false; error: string };
 type Codec = (field: FieldSpec, raw: unknown) => Parsed;
 
 const ok = (value: Canonical): Parsed => ({ ok: true, value });
@@ -38,7 +39,8 @@ function text(f: FieldSpec, raw: unknown, extra?: (s: string) => string | null):
 const decimalSyntax = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
 
 function decimalDigits(raw: unknown): { negative: boolean; int: string; frac: string } | null {
-  const s = typeof raw === "number" ? (Number.isFinite(raw) ? String(raw) : "") : typeof raw === "string" ? raw.trim() : "";
+  const s =
+    typeof raw === "number" ? (Number.isFinite(raw) ? String(raw) : "") : typeof raw === "string" ? raw.trim() : "";
   const m = decimalSyntax.exec(s);
   if (!m || (m[2] === "" && (m[3] ?? "") === "")) return null;
   const exp = Number(m[4] ?? 0);
@@ -64,7 +66,11 @@ function roundToScale(d: { negative: boolean; int: string; frac: string }, scale
   const kept = d.int + d.frac.slice(0, scale);
   const up = Number(d.frac[scale]) >= 5;
   const n = (BigInt(kept || "0") + (up ? 1n : 0n)).toString().padStart(scale + 1, "0");
-  return { negative: d.negative, int: n.slice(0, n.length - scale).replace(/^0+/, ""), frac: n.slice(n.length - scale) };
+  return {
+    negative: d.negative,
+    int: n.slice(0, n.length - scale).replace(/^0+/, ""),
+    frac: n.slice(n.length - scale),
+  };
 }
 
 function plain(d: { negative: boolean; int: string; frac: string }): string {
@@ -90,7 +96,8 @@ export const codecs: Record<FieldType, Codec> = {
   bool: (_f, raw) => (typeof raw === "boolean" ? ok(raw) : fail("must be a boolean")),
   int: (f, raw) => {
     if (typeof raw !== "number" || !Number.isInteger(raw)) return fail("must be an integer");
-    if (raw < int32.min || raw > int32.max) return fail(`must be between ${int32.min} and ${int32.max} (Postgres integer)`);
+    if (raw < int32.min || raw > int32.max)
+      return fail(`must be between ${int32.min} and ${int32.max} (Postgres integer)`);
     return bounds(f, raw) ?? ok(raw === 0 ? 0 : raw);
   },
   decimal: (f, raw) => {
@@ -100,7 +107,9 @@ export const codecs: Record<FieldType, Codec> = {
     const scale = f.scale ?? (f.precision != null ? 0 : null);
     const r = scale === null ? { ...d, frac: d.frac.replace(/0+$/, "") } : roundToScale(d, scale);
     if (f.precision != null && r.int.length > f.precision - (scale ?? 0))
-      return fail(`does not fit numeric(${f.precision}, ${scale ?? 0}): at most ${f.precision - (scale ?? 0)} digits before the decimal point`);
+      return fail(
+        `does not fit numeric(${f.precision}, ${scale ?? 0}): at most ${f.precision - (scale ?? 0)} digits before the decimal point`,
+      );
     const value = plain(r);
     return bounds(f, Number(value)) ?? ok(value);
   },
@@ -113,24 +122,44 @@ export const codecs: Record<FieldType, Codec> = {
     const m = typeof raw === "string" ? datetimePattern.exec(raw) : null;
     if (!m) return fail("must be an ISO 8601 date-time with a time zone (Z or ±hh:mm); a date alone is ambiguous");
     const [hh, mi, ss] = [+m[4], +m[5], +(m[6] ?? 0)];
-    if (!validCalendarDate(+m[1], +m[2], +m[3]) || hh > 23 || mi > 59 || ss > 59) return fail(`'${String(raw)}' is not a valid date-time`);
-    if (m[8] !== "Z" && (+m[8].slice(1, 3) > 15 || +m[8].slice(4) > 59)) return fail(`'${m[8]}' is not a valid time zone offset`);
+    if (!validCalendarDate(+m[1], +m[2], +m[3]) || hh > 23 || mi > 59 || ss > 59)
+      return fail(`'${String(raw)}' is not a valid date-time`);
+    if (m[8] !== "Z" && (+m[8].slice(1, 3) > 15 || +m[8].slice(4) > 59))
+      return fail(`'${m[8]}' is not a valid time zone offset`);
     if ((m[7] ?? "").length > 3) return fail("supports at most millisecond precision");
     const t = new Date(raw as string);
-    return Number.isNaN(t.getTime()) || t.getUTCFullYear() < 1 || t.getUTCFullYear() > 9999 ? fail(`'${String(raw)}' is not a valid date-time between years 1 and 9999 UTC`) : ok(t.toISOString());
+    return Number.isNaN(t.getTime()) || t.getUTCFullYear() < 1 || t.getUTCFullYear() > 9999
+      ? fail(`'${String(raw)}' is not a valid date-time between years 1 and 9999 UTC`)
+      : ok(t.toISOString());
   },
-  enum: (f, raw) => (typeof raw === "string" && (f.values ?? []).includes(raw) ? ok(raw) : fail(`must be one of ${(f.values ?? []).join(", ")}`)),
-  ref: (_f, raw) => (typeof raw === "string" && uuid.test(raw) ? ok(raw.toLowerCase()) : fail("must be the id of an existing row")),
+  enum: (f, raw) =>
+    typeof raw === "string" && (f.values ?? []).includes(raw)
+      ? ok(raw)
+      : fail(`must be one of ${(f.values ?? []).join(", ")}`),
+  ref: (_f, raw) =>
+    typeof raw === "string" && uuid.test(raw) ? ok(raw.toLowerCase()) : fail("must be the id of an existing row"),
   files: () => fail("files are not supported yet"),
 };
 
-const invisible = /[\u200b-\u200d\u2060\ufeff]/g;
+const anyEdge = /[\s\u200b-\u200d\u2060\ufeff]/g;
+const ends = /^[\s\u200b-\u200d\u2060\ufeff]+|[\s\u200b-\u200d\u2060\ufeff]+$/g;
+const blankLinesBefore = /^(?:[ \t\u200b-\u200d\u2060\ufeff]*\n)+/;
+const blankLinesAfter = /(?:\n[ \t\u200b-\u200d\u2060\ufeff]*)+$/;
 
-export const normalizeText = (raw: string) => raw.replace(invisible, "").trim();
+export const isBlank = (raw: string) => raw.replace(anyEdge, "") === "";
+
+export const trimEnds = (raw: string) => raw.replace(ends, "");
+
+export function normalizeText(raw: string, type: FieldType): string {
+  const s = raw.replace(/\r\n/g, "\n");
+  return type === "text" ? s.replace(blankLinesBefore, "").replace(blankLinesAfter, "") : trimEnds(s);
+}
 
 export function parseValue(field: FieldSpec, raw: unknown): Parsed {
-  const value = typeof raw === "string" ? normalizeText(raw) : raw;
-  if (value === null || value === "") return field.required ? fail("is required") : ok(null);
+  if (raw === null) return field.required ? fail("is required") : ok(null);
+  if (typeof raw === "string" && isBlank(raw))
+    return field.required ? fail("is required") : { ok: true, value: undefined };
+  const value = typeof raw === "string" ? normalizeText(raw, field.type) : raw;
   return codecs[field.type](field, value);
 }
 

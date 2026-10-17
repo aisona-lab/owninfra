@@ -168,12 +168,36 @@ describe("create input", () => {
           form.set(c.name, raw);
           const viaApi = coerce(entity, { [c.name]: raw }, "update");
           const viaForm = coerce(entity, fromForm([c], form), "update");
-          const expected = c.required
-            ? { ok: false, errors: { [c.name]: "is required" } }
-            : { ok: true, values: { [c.name]: null } };
+          const expected = c.required ? { ok: false, errors: { [c.name]: "is required" } } : { ok: true, values: {} };
           expect(viaApi).toEqual(expected);
           expect(viaForm).toEqual(expected);
         }
+      }
+  });
+
+  it("stores text from forms and the API identically, keeping interior joiners", () => {
+    const entity = registry.entities.find(
+      (e) => e.columns.some((c) => c.input === "text" && !c.required) && e.columns.some((c) => c.input === "string"),
+    )!;
+    const text = entity.columns.find((c) => c.input === "text" && !c.required)!;
+    const str = entity.columns.find((c) => c.input === "string")!;
+    for (const v of ["👨‍👩‍👧", "می‌خواهم", "क्‍ष", "a\u2060b", "a\ufeffb"]) {
+      const form = new FormData();
+      form.set(str.name, `\u200b ${v} \ufeff`);
+      form.set(text.name, `\r\n  ${v}\r\nline 2\r\n\r\n`);
+      const viaForm = coerce(entity, fromForm([str, text], form), "update");
+      const viaApi = coerce(entity, { [str.name]: `${v}\n`, [text.name]: `  ${v}\nline 2` }, "update");
+      expect(viaForm).toEqual({ ok: true, values: { [str.name]: v, [text.name]: `  ${v}\nline 2` } });
+      expect(viaApi).toEqual(viaForm);
+    }
+  });
+
+  it("omits blank optional values on create so column defaults apply", () => {
+    for (const entity of registry.entities)
+      for (const c of createColumns(entity).filter((x) => !x.required && x.input !== "bool")) {
+        const r = coerce(entity, { [c.name]: " \u200b " }, "create");
+        if (r.ok) expect(c.name in r.values).toBe(false);
+        else expect(r.errors[c.name]).toBeUndefined();
       }
   });
 

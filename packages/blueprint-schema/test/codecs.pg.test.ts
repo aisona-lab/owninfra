@@ -82,7 +82,7 @@ const suites: Record<string, Suite> = {
     sqlType: "varchar(3)",
     cases: [yes("abc", "abc"), yes("ééé", "ééé"), yes("CZ1", "CZ1"), no("abcd"), no("a\u0000"), no(12, "stored")],
   },
-  text: { field: f({ type: "text" }), sqlType: "text", cases: [yes("long ".repeat(100), "long ".repeat(100).trim()), yes("\u200b x \ufeff", "x"), no(true, "stored")] },
+  text: { field: f({ type: "text" }), sqlType: "text", cases: [yes("long ".repeat(100), "long ".repeat(100)), yes("\n \u200b\n  x \ufeff\n\n", "  x \ufeff"), no(true, "stored")] },
   email: { field: f({ type: "email" }), sqlType: "text", cases: [yes("a@b.cz", "a@b.cz"), no("not-an-email", "stored")] },
   bool: { field: f({ type: "bool" }), sqlType: "boolean", cases: [yes(true, true), yes(false, false), no("notbool", "changes"), no("true", "stored")] },
   enum: { field: f({ type: "enum", values: ["EUR", "USD"] }), sqlType: "text", cases: [yes("EUR", "EUR"), no("eur", "stored")] },
@@ -146,6 +146,19 @@ describe.each(Object.entries(suites))("%s codec against Postgres", (_name, { fie
           return String((r as { v: unknown }).v);
         });
       expect(await at("UTC")).not.toBe(await at("America/New_York"));
+    }
+  });
+});
+
+describe("joiners round-trip to Postgres byte for byte", () => {
+  const values = ["👨‍👩‍👧", "می‌خواهم", "क्‍ष", "a\u2060b", "a\ufeffb", "    indented\n\n  body"];
+  it.each(values.map((v) => [JSON.stringify(v), v] as const))("%s", async (_label, v) => {
+    for (const type of ["string", "text"] as const) {
+      const parsed = parseValue({ name: "v", type }, `\u200b \r\n${v}\r\n \ufeff`);
+      const expected = type === "text" && v.startsWith(" ") ? v : v.trim();
+      expect(parsed).toEqual({ ok: true, value: type === "text" ? `${expected}` : expected });
+      const [row] = await sql`select encode(convert_to(${parsed.ok ? (parsed.value as string) : ""}::text, 'UTF8'), 'hex') as hex`;
+      expect(row.hex).toBe(Buffer.from(expected, "utf8").toString("hex"));
     }
   });
 });

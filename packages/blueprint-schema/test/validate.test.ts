@@ -134,11 +134,29 @@ describe("validateBlueprint", () => {
 });
 
 describe("seed normalization", () => {
-  it("stores blank optional values as null and normalized text otherwise", () => {
-    const r = validateBlueprintYaml(readFileSync(new URL("../../cli/test/fixtures/valid/seedblanks.yaml", import.meta.url), "utf8"));
+  const blanksFixture = () => parse(readFileSync(new URL("../../cli/test/fixtures/valid/seedblanks.yaml", import.meta.url), "utf8"));
+  const vendors = (doc: unknown) => {
+    const r = validateBlueprint(doc);
     if (!r.ok) throw new Error(JSON.stringify(r.errors));
-    const [a, b] = [...r.model.seed.rows].find(([e]) => e === "Vendor")![1];
-    expect(a).toMatchObject({ name: "A", contact_email: null, since: null, rank: null });
-    expect(b).toMatchObject({ contact_email: "b@acme.example", credit: null });
+    return [...r.model.seed.rows].find(([e]) => e === "Vendor")![1];
+  };
+
+  it("omits blank optional values so column defaults apply", () => {
+    const [a, b] = vendors(blanksFixture());
+    expect(a).toEqual({ name: "A", tax_id: "T1" });
+    expect(b).toEqual({ name: "B", tax_id: "T2", contact_email: "b@acme.example", since: "2026-12-31" });
+  });
+
+  it("keeps interior joiners byte for byte and trims only the ends", () => {
+    const doc = blanksFixture();
+    const names = ["👨‍👩‍👧", "می‌خواهم", "क्‍ष", "a\u2060b", "a\ufeffb"];
+    doc.seed.Vendor = names.map((name, i) => ({ name: `\u200b ${name} \ufeff`, tax_id: `T${i}`, contact_email: "x@y.example\r\n" }));
+    expect(vendors(doc).map((v) => [v.name, v.contact_email])).toEqual(names.map((n) => [n, "x@y.example"]));
+  });
+
+  it("rejects a zero-width-only required value", () => {
+    const doc = blanksFixture();
+    doc.seed.Vendor = [{ name: "\u200b", tax_id: "T1" }];
+    expect(messages(doc)).toEqual(["seed.Vendor[0].name: is required"]);
   });
 });

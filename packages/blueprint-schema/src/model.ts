@@ -295,8 +295,8 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]): Map<string, Record<string
           continue;
         }
         const r = parseValue(f, raw);
-        if (r.ok) out[k] = r.value;
-        else errors.push({ path: `seed.${key}[${i}].${k}`, message: r.error });
+        if (!r.ok) errors.push({ path: `seed.${key}[${i}].${k}`, message: r.error });
+        else if (r.value !== undefined) out[k] = r.value;
       }
       return out;
     });
@@ -304,9 +304,9 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]): Map<string, Record<string
       const def = f.default === undefined ? null : parseValue(f, f.default);
       const seen = new Map<string, number>();
       parsed.forEach((row, i) => {
-        const fromDefault = !(f.name in rows[i]);
+        const fromDefault = !(f.name in row);
         const value = fromDefault ? (def?.ok ? def.value : null) : f.name in row ? row[f.name] : null;
-        if (value === null) return;
+        if (value === null || value === undefined) return;
         const k = uniqueKey(value);
         const first = seen.get(k);
         const shown = typeof value === "string" ? `'${value}'` : String(value);
