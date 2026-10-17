@@ -8,5 +8,5 @@ export default defineConfig({
       "@owninfra/compiler": fileURLToPath(new URL("packages/compiler/src/index.ts", import.meta.url)),
     },
   },
-  test: { include: ["packages/*/test/**/*.test.ts"], exclude: ["**/node_modules/**", "packages/compiler/test/golden/**"] },
+  test: { include: ["packages/*/test/**/*.test.ts"], exclude: ["**/node_modules/**", "packages/compiler/test/golden/**", "**/*.pg.test.ts"] },
 });

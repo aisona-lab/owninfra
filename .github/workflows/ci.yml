@@ -43,6 +43,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile && pnpm build
+      - run: pnpm test:pg
       - run: node packages/cli/dist/bin.js init --example approvals "$RUNNER_TEMP/approvals"
       - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate
         working-directory: ${{ runner.temp }}/approvals
