@@ -137,6 +137,8 @@ seed:
     - { email: "requester@acme.example", roles: [requester] }
     - { email: "manager@acme.example", roles: [manager] }
     - { email: "finance@acme.example", roles: [finance] }
+    - { email: "admin@acme.example", roles: [admin] }
+    - { email: "lead@acme.example", roles: [requester, manager] }   # separation_of_duties: no puede aprobar lo suyo
 
 infra:
   iac: cdk

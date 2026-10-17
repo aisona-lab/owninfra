@@ -1,0 +1,16 @@
+"use server";
+import { redirect } from "next/navigation";
+import { create, transition } from "./repository";
+import { requireUser } from "./session";
+
+const fields = (form: FormData) => Object.fromEntries([...form.entries()].filter(([k]) => !k.startsWith("$")).map(([k, v]) => [k, String(v)]));
+
+export async function createAction(table: string, form: FormData) {
+  const row = await create(await requireUser(), table, fields(form));
+  redirect(`/e/${table}/${row.id}`);
+}
+
+export async function transitionAction(table: string, id: string, transitionId: string, form: FormData) {
+  await transition(await requireUser(), table, id, transitionId, fields(form));
+  redirect(`/e/${table}/${id}`);
+}

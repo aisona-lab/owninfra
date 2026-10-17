@@ -1,0 +1,7 @@
+import { PHASE_PRODUCTION_BUILD } from "next/constants.js";
+
+export default function config(phase) {
+  if (phase === PHASE_PRODUCTION_BUILD && process.env.OWNINFRA_AUTH_STUB)
+    throw new Error("OWNINFRA_AUTH_STUB is set: the local auth stub cannot be built into a production artifact");
+  return { output: "standalone" };
+}

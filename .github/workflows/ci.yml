@@ -21,3 +21,42 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: node packages/cli/dist/bin.js validate examples/approvals/blueprint.yaml
+      - run: pnpm goldens:update && git diff --exit-code packages/compiler/test/golden
+  generated-app:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: owninfra
+          POSTGRES_PASSWORD: owninfra
+          POSTGRES_DB: spend_approvals
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U owninfra" --health-interval 2s --health-retries 30
+    env:
+      DATABASE_URL: postgres://owninfra:owninfra@localhost:5432/spend_approvals
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile && pnpm build
+      - run: node packages/cli/dist/bin.js init --example approvals "$RUNNER_TEMP/approvals"
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate
+        working-directory: ${{ runner.temp }}/approvals
+      - run: npm install --no-audit --no-fund
+        working-directory: ${{ runner.temp }}/approvals/app
+      - run: npx tsc --noEmit && npx eslint . && npx vitest run
+        working-directory: ${{ runner.temp }}/approvals/app
+      - run: |
+          node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate | tee out.txt
+          grep -q "^generate: 0 written" out.txt
+        working-directory: ${{ runner.temp }}/approvals
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js dev --db-only && node $GITHUB_WORKSPACE/packages/cli/dist/bin.js dev --db-only
+        working-directory: ${{ runner.temp }}/approvals
+      - run: |
+          if OWNINFRA_AUTH_STUB=1 npx next build; then echo "stub build must fail"; exit 1; fi
+          npx next build
+        working-directory: ${{ runner.temp }}/approvals/app

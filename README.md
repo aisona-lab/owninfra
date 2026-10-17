@@ -34,13 +34,25 @@ What works today, from a clone:
 ```sh
 pnpm install && pnpm build
 node packages/cli/dist/bin.js validate examples/approvals/blueprint.yaml
+
+# run the approvals example locally (no AWS account needed)
+alias owninfra="node $PWD/packages/cli/dist/bin.js"
+owninfra init --example approvals /tmp/approvals && cd /tmp/approvals
+owninfra generate        # writes app/, docker-compose.yml and owninfra.lock.json
+owninfra dev             # docker compose Postgres, migrate, seed, next dev on :3000
 ```
+
+`dev` uses `docker compose` by default. Set `DATABASE_URL` to use a Postgres you run yourself. Sign in at `/api/auth/signin` as one of the seed users (`requester@acme.example`, `manager@acme.example`, `finance@acme.example`) with no password. This local stub is enabled by `OWNINFRA_AUTH_STUB=1`, which `dev` sets, and `next build` fails when it is set.
+
+`generate` is idempotent. It records a hash of every generated file in `owninfra.lock.json` and refuses to overwrite a file you edited by hand (pass `--force` to discard the edit). Put your own code in `app/src/custom/` and import from `@/lib/owninfra`; `generate` never touches it. If the blueprint changes after the dev database was created, `dev` refuses until you run `owninfra dev --reset`, which drops and recreates it.
 
 ## Blueprint
 
 [`examples/approvals/blueprint.yaml`](examples/approvals/blueprint.yaml) is a complete spend-approval tool: roles, entities, CRUD and ownership permissions, a workflow with role-gated transitions, and dev/prod environments. The schema is published as Zod and as [JSON Schema](packages/blueprint-schema/blueprint.schema.json) for editor autocompletion via `yaml-language-server`. Fields marked v1 are accepted and ignored with a warning.
 
-`validate` runs harness level L0: schema checks plus semantic checks (references resolve, roles and states exist, no unreachable workflow states, no dead-end states (every non-final state needs an outgoing transition), `own` rules require ownership).
+`validate` runs harness level L0: schema checks plus semantic checks (references resolve, roles and states exist, no unreachable workflow states, no dead-end states (every non-final state needs an outgoing transition), `own` rules require ownership). It also checks names: table names are the snake_case plural of the entity, and table and column names must be valid Postgres identifiers that are not reserved words (`order`, `user`), not system columns (`id`, `created_at`, `updated_at`, `created_by`), and within the 63-byte limit.
+
+`version` must be `0.1`. YAML reads the number `0.10` as `0.1`, so it is accepted, but the string `"0.10"` is rejected.
 
 ## Repo layout
 

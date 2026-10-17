@@ -61,6 +61,7 @@ const Workflow = z
 const Entity = z
   .object({
     name: entityName,
+    table: z.string().regex(/^[a-z_][a-z0-9_]*$/, "must be a lowercase snake_case SQL identifier").optional(),
     label: z.string().optional(),
     fields: z.array(Field).min(1),
     display: id.optional(),

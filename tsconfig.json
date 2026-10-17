@@ -1,4 +1,14 @@
 {
   "files": [],
-  "references": [{ "path": "packages/blueprint-schema" }, { "path": "packages/cli" }]
+  "references": [
+    {
+      "path": "packages/blueprint-schema"
+    },
+    {
+      "path": "packages/compiler"
+    },
+    {
+      "path": "packages/cli"
+    }
+  ]
 }
