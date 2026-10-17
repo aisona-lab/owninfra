@@ -82,6 +82,19 @@ describe("cli", () => {
     "seedrequired.yaml": "error seed.Vendor[0]: missing required field 'tax_id'",
     "seedpattern.yaml": "error seed.Department[1].code: must match ^[A-Z]{2,6}$",
     "longfield.yaml": "error entities[2].fields[6].name: column name 'fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff' makes the constraint name 'purchase_requests_fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_fkey' longer than 63 bytes; shorten the field name",
+    "tablepg.yaml": "error entities[1].table: table name 'pg_class' starts with 'pg_', which Postgres reserves for its catalog (pg_catalog is searched first, so it would shadow the table)",
+    "tablelong.yaml": "error entities[1].table: table name 'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv' is longer than 63 bytes; shorten the table name",
+    "seedunique.yaml": "error seed.Department[1].code: duplicate value 'ENG' in unique field 'code' (same as seed.Department[0])",
+    "seednumeric.yaml": "error seed.Vendor[1].vendor_no: duplicate value '1.00' in unique field 'vendor_no' (same as seed.Vendor[0])",
+    "seeddefault.yaml": "error seed.Vendor[1].slot: duplicate value 7 (from the field default) in unique field 'slot' (same as seed.Vendor[0])",
+    "seeddatecal.yaml": "error seed.Vendor[0].since: '2026-02-30' is not a calendar date",
+    "seeddatetimeunique.yaml": "error seed.Vendor[1].audited_at: duplicate value '2026-01-01T00:00:00.000Z' in unique field 'audited_at' (same as seed.Vendor[0])",
+    "seeddatetimedateonly.yaml": "error seed.Vendor[0].audited_at: must be an ISO 8601 date-time with a time zone (Z or ±hh:mm); a date alone is ambiguous",
+    "seeddatetimemin.yaml": "error seed.Vendor[0].audited_at: '0001-01-01T00:30:00+01:00' is not a valid date-time between years 1 and 9999 UTC",
+    "seeddatetimemax.yaml": "error seed.Vendor[0].audited_at: '9999-12-31T23:30:00-01:00' is not a valid date-time between years 1 and 9999 UTC",
+    "seeddecimalprecision.yaml": "error seed.Vendor[0].credit: does not fit numeric(4, 2): at most 2 digits before the decimal point",
+    "seeddecimaloverflow.yaml": "error seed.Vendor[0].big_credit: does not fit numeric(12, 2): at most 10 digits before the decimal point",
+    "seedint32.yaml": "error seed.Vendor[0].rank: must be between -2147483648 and 2147483647 (Postgres integer)",
     "unreach.yaml": "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
   };
 
@@ -93,6 +106,27 @@ describe("cli", () => {
 
   it("covers every invalid fixture", () => {
     expect(readdirSync(fixtures).sort()).toEqual(Object.keys(expectedFirstError).sort());
+  });
+
+  it("reports every numeric variant that Postgres would treat as equal", async () => {
+    const r = await cli("validate", join(fixtures, "seednumeric.yaml"));
+    expect(r.err.split("\n").filter((l) => l.startsWith("error ")).map((l) => l.split(":")[0])).toEqual([
+      "error seed.Vendor[1].vendor_no",
+      "error seed.Vendor[2].vendor_no",
+      "error seed.Vendor[3].vendor_no",
+      "error seed.Vendor[4].vendor_no",
+      "error seed.Vendor[6].vendor_no",
+    ]);
+  });
+
+  it("accepts seeds whose unique strings differ only by case", async () => {
+    const file = fileURLToPath(new URL("fixtures/valid/seedcase.yaml", import.meta.url));
+    expect(await cli("validate", file)).toMatchObject({ code: 0, out: `${file}: valid` });
+  });
+
+  it("accepts typed seeds that fit their Postgres columns", async () => {
+    const file = fileURLToPath(new URL("fixtures/valid/seedtyped.yaml", import.meta.url));
+    expect(await cli("validate", file)).toMatchObject({ code: 0, out: `${file}: valid` });
   });
 
   it("init copies the example and is idempotent", async () => {

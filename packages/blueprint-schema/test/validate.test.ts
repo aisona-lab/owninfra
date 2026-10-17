@@ -94,7 +94,7 @@ describe("validateBlueprint", () => {
       expect.arrayContaining([
         "entities[2].workflow.transitions[2].require_fields[0]: unknown field 'reason'",
         "entities[2].list.columns[7]: unknown field 'total'",
-        "entities[2].fields[3].default: 'GBP' is not one of the enum values",
+        "entities[2].fields[3].default: 'GBP' must be one of EUR, USD, CZK",
         "permissions.PurchaseRequest.requester.update.in_states: unknown state 'open'",
       ]),
     );

@@ -127,6 +127,20 @@ describe("lock paths", () => {
     for (const v of victims) expect(readFileSync(join(dir, v), "utf8")).toBe("keep\n");
   });
 
+  it.each(["app/src/custom/(generated)/x.ts", "app/src/app/(custom)/(generated)/x.ts"])("cannot delete user file %s through a tampered lock", async (v) => {
+    const { dir, fs } = await project();
+    mkdirSync(join(dir, v, ".."), { recursive: true });
+    writeFileSync(join(dir, v), "keep\n");
+    const lock = JSON.parse(readFileSync(join(dir, "owninfra.lock.json"), "utf8"));
+    lock.files[v] = sha("keep\n");
+    writeFileSync(join(dir, "owninfra.lock.json"), JSON.stringify(lock));
+    expect(await write(fs, dir, meta, { force: true })).toEqual({ ok: false, badLock: `owninfra.lock.json lists '${v}' is not a generated path; refusing to touch it. Restore the lock from git.` });
+    expect(readFileSync(join(dir, v), "utf8")).toBe("keep\n");
+    lock.files = Object.fromEntries(Object.entries(lock.files).filter(([k]) => k !== v));
+    writeFileSync(join(dir, "owninfra.lock.json"), JSON.stringify(lock));
+    expect(await write(fs, dir, meta, { force: false })).toMatchObject({ ok: true, stray: [] });
+  });
+
   it("explains a lock entry that is a directory", async () => {
     const { dir, fs, tamper } = await project();
     mkdirSync(join(dir, "app/drizzle/old"));
