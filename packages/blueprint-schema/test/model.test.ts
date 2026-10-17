@@ -48,3 +48,26 @@ describe("parse into Model", () => {
     ]);
   });
 });
+
+describe("naming", () => {
+  it("derives snake_case plural table names", async () => {
+    const { tableName } = await import("../src/index.js");
+    expect(["PurchaseRequest", "Category", "Address", "Box", "Day", "HTTPLog"].map(tableName)).toEqual([
+      "purchase_requests",
+      "categories",
+      "addresses",
+      "boxes",
+      "days",
+      "http_logs",
+    ]);
+    expect(model().entities.get("PurchaseRequest" as EntityName)!.table).toBe("purchase_requests");
+  });
+
+  it("NFC-normalizes labels so composed and decomposed input match", () => {
+    const decomposed = source.replace("Ingeniería", "Ingenieri\u0301a").replace('"Departamento"', '"Departamento\u0301"');
+    const r = validateBlueprintYaml(decomposed);
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.model.entities.get("Department" as EntityName)!.label).toBe("Departament\u00f3");
+    expect(r.model.seed.rows.get("Department" as EntityName)![0].name).toBe("Ingenier\u00eda");
+  });
+});

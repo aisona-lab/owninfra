@@ -1,5 +1,6 @@
 import type { Blueprint as RawBlueprint } from "./schema.js";
 import { crudActions } from "./schema.js";
+import { isSystemColumn, maxIdentifier, sqlIdentifierProblem, tableName } from "./naming.js";
 
 export interface Issue {
   path: string;
@@ -169,8 +170,11 @@ export type Workflow = {
   separationOfDuties: boolean;
 };
 
+export type TableName = Brand<string, "TableName">;
+
 export type Entity = {
   name: EntityName;
+  table: TableName;
   label: string;
   fields: ReadonlyMap<FieldName, Field>;
   display: FieldName;
@@ -206,8 +210,27 @@ export type ParseResult =
 export function parse(raw: RawBlueprint): ParseResult {
   const { errors, warnings } = check(raw);
   checkSeed(raw, errors);
+  checkNames(raw, errors);
   if (errors.length) return { ok: false, errors, warnings };
   return { ok: true, model: build(raw), warnings };
+}
+
+function checkNames(bp: RawBlueprint, errors: Issue[]) {
+  bp.entities.forEach((e, ei) => {
+    const table = tableName(e.name);
+    const tableProblem = sqlIdentifierProblem(table);
+    if (tableProblem) errors.push({ path: `entities[${ei}].name`, message: `table name ${tableProblem}` });
+    const columns = [...e.fields.filter((f) => f.type !== "files").map((f) => f.name), ...(e.workflow ? [e.workflow.field] : [])];
+    columns.forEach((c) => {
+      const fi = e.fields.findIndex((f) => f.name === c);
+      const path = fi < 0 ? `entities[${ei}].workflow.field` : `entities[${ei}].fields[${fi}].name`;
+      if (isSystemColumn(c)) errors.push({ path, message: `'${c}' is a system column` });
+      const problem = sqlIdentifierProblem(c);
+      if (problem) errors.push({ path, message: `column name ${problem}` });
+      else if (!tableProblem && Buffer.byteLength(`${table}_${c}_fkey`) > maxIdentifier)
+        errors.push({ path, message: `constraint name '${table}_${c}_fkey' is longer than ${maxIdentifier} bytes` });
+    });
+  });
 }
 
 function checkSeed(bp: RawBlueprint, errors: Issue[]) {
@@ -286,6 +309,7 @@ function build(bp: RawBlueprint): Model {
     };
     entities.set(e.name as EntityName, {
       name: e.name as EntityName,
+      table: tableName(e.name) as TableName,
       label: e.label ?? e.name,
       fields,
       display: (e.display ?? e.fields[0].name) as FieldName,

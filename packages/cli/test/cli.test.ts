@@ -68,6 +68,10 @@ describe("cli", () => {
     "nodev.yaml": "error environments: a 'dev' environment is required",
     "permscalar.yaml": "error permissions.Vendor.manager: must be a list of actions (create, read, update, delete) or a map of action to rule",
     "types.yaml": "error roles: Expected array, received string",
+    "reserved.yaml": "error entities[2].fields[6].name: column name 'order' is a reserved word in Postgres",
+    "kebabfield.yaml": "error entities[2].fields[6].name: column name 'needed-by' must be lowercase snake_case to be a SQL identifier",
+    "systemcol.yaml": "error entities[2].fields[6].name: 'created_by' is a system column",
+    "longname.yaml": "error entities[2].name: table name 'purchase_request_for_extremely_long_departmental_procurement_workflows' is longer than 63 bytes",
     "unreach.yaml": "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
   };
 

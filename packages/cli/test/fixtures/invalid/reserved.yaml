@@ -1,0 +1,197 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aisona-lab/owninfra/main/packages/blueprint-schema/blueprint.schema.json
+version: 0.1
+
+app:
+  name: spend-approvals
+  title: "Aprobaciones de gasto"
+  description: "Solicitudes de compra con aprobación por manager y finanzas."
+  owner: platform-team@acme.example
+  locale: es-ES
+  timezone: Europe/Prague
+  tags:
+    cost-center: "IT-042"
+    data-classification: internal
+
+auth:
+  provider: cognito
+  login: [email_password]          # MVP
+  mfa: optional                    # off | optional | required
+  self_signup: false               # herramienta interna: solo invitación
+  federation:                      # v1
+    - type: saml
+      name: AcmeEntraID
+      metadata_url_secret: /spend-approvals/entra-metadata-url
+      group_claim: groups
+      group_mapping:
+        "sg-finance": finance
+        "sg-managers": manager
+  session:
+    idle_timeout_minutes: 60
+
+roles:
+  - id: requester
+    description: "Cualquier empleado que solicita gasto"
+    default: true                  # rol asignado a usuarios nuevos
+  - id: manager
+    description: "Aprueba solicitudes de su departamento"
+  - id: finance
+    description: "Aprobación final y marca como pagada"
+  - id: admin
+    description: "Gestiona catálogos y usuarios"
+
+entities:
+  - name: Department
+    label: "Departamento"
+    fields:
+      - { name: name, type: string, required: true, unique: true, max: 80 }
+      - { name: code, type: string, required: true, unique: true, pattern: "^[A-Z]{2,6}$" }
+      - { name: manager_email, type: email, required: true }
+    display: name
+
+  - name: Vendor
+    label: "Proveedor"
+    fields:
+      - { name: name, type: string, required: true, max: 120 }
+      - { name: tax_id, type: string, required: true, unique: true }
+      - { name: contact_email, type: email }
+      - { name: active, type: bool, default: true }
+    display: name
+
+  - name: PurchaseRequest
+    label: "Solicitud de compra"
+    fields:
+      - { name: title, type: string, required: true, max: 140 }
+      - { name: description, type: text }
+      - { name: amount, type: decimal, precision: 12, scale: 2, required: true, min: 0.01 }
+      - { name: currency, type: enum, values: [EUR, USD, CZK], default: EUR }
+      - { name: department, type: ref, to: Department, required: true }
+      - { name: vendor, type: ref, to: Vendor, required: true }
+      - { name: order, type: int }
+      - { name: justification, type: text, required: true }
+      - { name: rejection_reason, type: text, visible_when: "status == 'rejected'" }
+      - { name: attachments, type: files, max_files: 5, max_mb: 10 }   # v1 (S3)
+    display: title
+    ownership: created_by          # habilita la regla "own" en permisos
+    list:
+      columns: [title, amount, currency, department, vendor, status, created_at]
+      default_sort: { field: created_at, dir: desc }
+      filters: [status, department, vendor, currency]
+      search: [title, description]
+    workflow:
+      field: status
+      initial: draft
+      states:
+        - { id: draft, label: "Borrador" }
+        - { id: submitted, label: "Enviada" }
+        - { id: manager_approved, label: "Aprobada por manager" }
+        - { id: approved, label: "Aprobada" }
+        - { id: rejected, label: "Rechazada", final: true }
+        - { id: paid, label: "Pagada", final: true }
+      transitions:
+        - { id: submit, from: draft, to: submitted, roles: [requester], only_owner: true }
+        - { id: manager_approve, from: submitted, to: manager_approved, roles: [manager] }
+        - { id: manager_reject, from: submitted, to: rejected, roles: [manager], require_fields: [rejection_reason] }
+        - id: finance_approve
+          from: manager_approved
+          to: approved
+          roles: [finance]
+        - { id: finance_reject, from: manager_approved, to: rejected, roles: [finance], require_fields: [rejection_reason] }
+        - { id: mark_paid, from: approved, to: paid, roles: [finance] }
+        - { id: auto_approve_small, from: submitted, to: approved, roles: [manager], when: "amount <= 500" }  # v1: guardas por campo
+      separation_of_duties: true   # quien crea no puede aprobar su propia solicitud
+      notify:                      # v1 (SES)
+        - { on: submit, to: "role:manager" }
+        - { on: [manager_reject, finance_reject], to: owner }
+        - { on: finance_approve, to: owner }
+
+permissions:
+  Department:
+    requester: [read]
+    manager:   [read]
+    finance:   [read]
+    admin:     [create, read, update, delete]
+  Vendor:
+    requester: [read]
+    manager:   [read]
+    finance:   [create, read, update]
+    admin:     [create, read, update, delete]
+  PurchaseRequest:
+    requester: { create: true, read: own, update: { own: true, in_states: [draft] }, delete: { own: true, in_states: [draft] } }
+    manager:   { read: all }
+    finance:   { read: all }
+    admin:     { read: all }
+
+audit:
+  enabled: true                    # tabla audit_events + vista para admin
+  retention_days: 2555             # ~7 años; se aplica con un job (v1)
+
+pages:
+  - { id: my-requests, title: "Mis solicitudes", entity: PurchaseRequest, filter: "created_by == me" }
+  - { id: inbox, title: "Pendientes de aprobar", entity: PurchaseRequest, filter: "status in transitions_available_to(me)" }
+
+seed:
+  Department:
+    - { name: "Ingeniería", code: "ENG", manager_email: "eng-manager@acme.example" }
+    - { name: "Operaciones", code: "OPS", manager_email: "ops-manager@acme.example" }
+  users:                           # solo en entornos con seed_users: true
+    - { email: "requester@acme.example", roles: [requester] }
+    - { email: "manager@acme.example", roles: [manager] }
+    - { email: "finance@acme.example", roles: [finance] }
+
+infra:
+  iac: cdk
+  compute: fargate                 # MVP: solo fargate
+  region_default: eu-central-1
+  network:
+    exposure: cloudfront_vpc_origin   # cloudfront_vpc_origin | private (v1)
+    custom_domain: null               # p. ej. approvals.internal.acme.example (requiere ACM en us-east-1)
+    waf_ip_allowlist: []              # v1
+  database:
+    engine: postgres
+    version: "16"
+  observability:
+    log_retention_days: 30
+    alarms:
+      - http_5xx_rate
+      - target_unhealthy
+      - db_cpu_high
+      - db_free_storage_low
+    alarm_email: platform-oncall@acme.example
+    tracing: false                    # v1: ADOT/OpenTelemetry
+
+environments:
+  dev:
+    account: "111111111111"
+    region: eu-central-1
+    compute: { cpu: 512, memory: 1024, desired: 1, max: 2 }
+    database: { instance: db.t4g.micro, multi_az: false, backup_days: 1, deletion_protection: false }
+    seed_users: true
+    removal_policy: destroy
+  staging:                            # v1 (pipeline de promoción)
+    account: "222222222222"
+    region: eu-central-1
+    compute: { cpu: 512, memory: 1024, desired: 1, max: 2 }
+    database: { instance: db.t4g.small, multi_az: false, backup_days: 7, deletion_protection: true }
+    seed_users: true
+    removal_policy: snapshot
+  prod:
+    account: "333333333333"
+    region: eu-central-1
+    compute: { cpu: 1024, memory: 2048, desired: 2, max: 4 }
+    database: { instance: db.t4g.medium, multi_az: true, backup_days: 14, deletion_protection: true }
+    seed_users: false
+    removal_policy: retain
+    deploy:
+      requires_approval: true         # v1: environment protegido en GitHub
+      github_oidc_role: "arn:aws:iam::333333333333:role/spend-approvals-deploy"
+
+verify:
+  nag_packs: [AwsSolutions]
+  checkov: { soft_fail: false, skip_checks: [] }   # toda excepción con justificación en docs/
+  smoke:
+    - login_as: requester
+      steps: [create PurchaseRequest, transition submit]
+    - login_as: manager
+      steps: [transition manager_approve]
+    - login_as: requester
+      expect_forbidden: [transition manager_approve]   # test negativo de RBAC
