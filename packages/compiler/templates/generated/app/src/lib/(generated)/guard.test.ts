@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableColumns, type Table } from "drizzle-orm";
-import { authorize, decideTransition } from "./guard";
+import { authorize, decideTransition, transitionInputProblems } from "./guard";
 import { coerce } from "./coerce";
 import { registry } from "./registry";
 import * as schema from "./schema";
@@ -29,6 +29,13 @@ describe.each(registry.entities.filter((e) => e.workflow))("$entity workflow", (
   it.each(wf.transitions.filter((t) => t.forbidCreator).map((t) => [t.id, t] as const))("%s is refused to the creator", (_id, t) => {
     const d = decideTransition({ email: owner, roles: [...t.roles] }, entity, row(t.from), t.id);
     expect(d).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it.each(wf.transitions.map((t) => [t.id, t] as const))("%s accepts only its require_fields", (_id, t) => {
+    const other = entity.columns.map((c) => c.name).find((n) => !t.requireFields.includes(n))!;
+    expect(transitionInputProblems(entity, t.id, Object.fromEntries(t.requireFields.map((f) => [f, "x"])))).toEqual([]);
+    expect(transitionInputProblems(entity, t.id, { [other]: "x" })).toEqual([`field '${other}' cannot be set by '${t.id}'`]);
+    expect(transitionInputProblems(entity, t.id, { [wf.field]: wf.states[wf.states.length - 1].id })).toHaveLength(1);
   });
 
   it("refuses a transition from the wrong state", () => {

@@ -51,6 +51,19 @@ export function decideTransition(
   return { ok: true, transition: t };
 }
 
+export function transitionInputProblems(
+  entity: EntityDef,
+  transitionId: string,
+  input: Record<string, unknown>,
+): string[] {
+  const t = entity.workflow?.transitions.find((x) => x.id === transitionId);
+  if (!t) return [];
+  const allowed = new Set(t.requireFields);
+  return Object.keys(input)
+    .filter((k) => !allowed.has(k))
+    .map((k) => `field '${k}' cannot be set by '${transitionId}'`);
+}
+
 export function availableTransitions(user: User, entity: EntityDef, row: Row): Transition[] {
   return (entity.workflow?.transitions ?? []).filter((t) => {
     const d = decideTransition(user, entity, row, t.id, Object.fromEntries(t.requireFields.map((f) => [f, "x"])));

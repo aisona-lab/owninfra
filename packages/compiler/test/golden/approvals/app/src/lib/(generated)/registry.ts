@@ -509,8 +509,16 @@ export const registry: Registry = {
   ],
   seedUsers: [
     {
+      email: "admin@acme.example",
+      roles: ["admin"],
+    },
+    {
       email: "finance@acme.example",
       roles: ["finance"],
+    },
+    {
+      email: "lead@acme.example",
+      roles: ["manager", "requester"],
     },
     {
       email: "manager@acme.example",

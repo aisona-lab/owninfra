@@ -2,7 +2,7 @@ import type postgres from "postgres";
 import { sql } from "./db";
 import { HttpError } from "./errors";
 import { coerce } from "./coerce";
-import { authorize, availableTransitions, decideTransition, entityByTable, readScope } from "./guard";
+import { authorize, availableTransitions, decideTransition, entityByTable, readScope, transitionInputProblems } from "./guard";
 import { registry } from "./registry";
 import type { EntityDef, Row, User } from "./types";
 
@@ -96,6 +96,8 @@ export async function transition(user: User, table: string, id: string, transiti
   const entity = resolve(table);
   const workflow = entity.workflow;
   if (!workflow) throw new HttpError(404, `${entity.entity} has no workflow`);
+  const problems = transitionInputProblems(entity, transitionId, input);
+  if (problems.length) throw new HttpError(422, problems.join("; "));
   const values = valuesOrThrow(entity, input, "update");
   return withAudit(user.email, entity, `transition:${transitionId}`, async (tx) => {
     const before = await load(tx, entity, id, true);
