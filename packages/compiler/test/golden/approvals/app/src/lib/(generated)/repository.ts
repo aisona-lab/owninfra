@@ -2,7 +2,7 @@
 import type postgres from "postgres";
 import { sql } from "./db";
 import { HttpError } from "./errors";
-import { coerce } from "./coerce";
+import { coerce, describeErrors } from "./coerce";
 import {
   authorize,
   availableTransitions,
@@ -66,9 +66,9 @@ export async function get(user: User, table: string, id: string): Promise<Row> {
   return row;
 }
 
-function valuesOrThrow(entity: EntityDef, input: Record<string, unknown>, mode: "create" | "update") {
+function valuesOrThrow(entity: EntityDef, input: Record<string, unknown>, mode: "create" | "update" | "transition") {
   const r = coerce(entity, input, mode);
-  if (!r.ok) throw new HttpError(422, r.errors.join("; "));
+  if (!r.ok) throw new HttpError(422, describeErrors(r.errors), r.errors);
   return r.values;
 }
 
@@ -118,14 +118,15 @@ export async function transition(
 ): Promise<Row> {
   const entity = resolve(table);
   const workflow = entity.workflow;
-  if (!workflow) throw new HttpError(404, `${entity.entity} has no workflow`);
+  if (!workflow?.transitions.some((t) => t.id === transitionId))
+    throw new HttpError(404, `unknown transition '${transitionId}'`);
   const problems = transitionInputProblems(entity, transitionId, input);
   if (problems.length) throw new HttpError(422, problems.join("; "));
-  const values = valuesOrThrow(entity, input, "update");
+  const values = valuesOrThrow(entity, input, "transition");
   return withAudit(user.email, entity, `transition:${transitionId}`, async (tx) => {
     const before = await load(tx, entity, id, true);
     if (!before) throw new HttpError(404, "not found");
-    const d = decideTransition(user, entity, before, transitionId, { ...before, ...values });
+    const d = decideTransition(user, entity, before, transitionId, values);
     if (!d.ok) throw new HttpError(d.status, d.reason);
     const set = { ...values, [workflow.field]: d.transition.to, updated_at: new Date() };
     const [row] =
@@ -133,6 +134,29 @@ export async function transition(
     const after = plain(row);
     return { entityId: id, before, after, result: after };
   });
+}
+
+export async function requireTransition(user: User, table: string, id: string, transitionId: string): Promise<void> {
+  const entity = resolve(table);
+  if (!entity.workflow?.transitions.some((t) => t.id === transitionId))
+    throw new HttpError(404, `unknown transition '${transitionId}'`);
+  const row = await load(sql, entity, id);
+  if (!row || !authorize(user, entity, "read", row)) throw new HttpError(404, "not found");
+}
+
+export async function rowLabels(user: User, entity: EntityDef): Promise<Record<string, string>> {
+  const rows = readScope(user, entity) ? await list(user, entity.table) : [];
+  return Object.fromEntries(rows.map((r) => [r.id, String(r[entity.display] ?? r.id)]));
+}
+
+export async function refLabels(user: User, entity: EntityDef): Promise<Record<string, Record<string, string>>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const c of entity.columns) {
+    const target = c.input === "ref" && c.ref ? entityByTable(c.ref) : undefined;
+    if (!target) continue;
+    out[c.name] = await rowLabels(user, target);
+  }
+  return out;
 }
 
 export async function inbox(user: User): Promise<{ entity: EntityDef; row: Row }[]> {

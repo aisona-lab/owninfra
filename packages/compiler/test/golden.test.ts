@@ -30,3 +30,18 @@ describe("golden: approvals", async () => {
     expect(f.contents).toBe(readFileSync(join(goldenDir, f.path), "utf8"));
   });
 });
+
+describe("shared codecs", () => {
+  it("ships the blueprint-schema codec table to the app unchanged", async () => {
+    const { staticTemplates } = await import("../src/static-templates.js");
+    const shipped = staticTemplates.find((t) => t.path === "app/src/lib/(generated)/codecs.ts");
+    expect(shipped?.contents).toBe(readFileSync(new URL("../../blueprint-schema/src/codecs.ts", import.meta.url), "utf8"));
+  });
+
+  it("emits codecs.ts as the header plus the source, byte for byte", async () => {
+    const r = await compile(source);
+    if (!r.ok) throw new Error(JSON.stringify(r.errors));
+    const emitted = r.files.find((f) => f.path === "app/src/lib/(generated)/codecs.ts")!.contents;
+    expect(emitted.slice(emitted.indexOf("\n") + 1)).toBe(readFileSync(new URL("../../blueprint-schema/src/codecs.ts", import.meta.url), "utf8"));
+  });
+});

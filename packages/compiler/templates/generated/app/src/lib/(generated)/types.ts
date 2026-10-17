@@ -12,6 +12,8 @@ export type Column = {
   min: number | null;
   max: number | null;
   pattern: string | null;
+  precision: number | null;
+  scale: number | null;
 };
 
 export type Transition = {

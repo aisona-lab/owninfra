@@ -107,8 +107,8 @@ export function registrySource(ir: Ir): string {
     roles: ir.roles,
     entities: ir.entities.map((e) => ({
       ...e,
-      columns: e.columns.map(({ name, label, input, required, unique, ref, values, default: d, min, max, pattern }) => ({
-        name, label, input, required, unique, ref, values, default: d, min, max, pattern,
+      columns: e.columns.map(({ name, label, input, required, unique, ref, values, default: d, min, max, pattern, precision, scale }) => ({
+        name, label, input, required, unique, ref, values, default: d, min, max, pattern, precision, scale,
       })),
     })),
     policies: ir.policies,
