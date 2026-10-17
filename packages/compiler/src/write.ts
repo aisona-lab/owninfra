@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, normalize, relative } from "node:path";
 import { prettierVersion, sha256, type FileSet } from "./emit.js";
 
 export const lockFile = "owninfra.lock.json";
@@ -8,16 +8,66 @@ export const lockFile = "owninfra.lock.json";
 export type Lock = { owninfra: string; prettier: string; irHash: string; files: Record<string, string> };
 
 export type WriteReport =
-  | { ok: true; written: string[]; unchanged: number; created: string[]; deleted: string[]; forced: string[] }
-  | { ok: false; edited: string[] };
+  | { ok: true; written: string[]; unchanged: number; created: string[]; deleted: string[]; forced: string[]; stray: string[] }
+  | { ok: false; edited: string[] }
+  | { ok: false; badLock: string };
 
-async function readLock(dir: string): Promise<Lock | null> {
+const userZone = ["blueprint.yaml", "app/src/custom/", "app/src/app/(custom)/"];
+
+function nearestExisting(path: string): string {
+  let p = path;
+  while (!existsSync(p)) p = dirname(p);
+  return realpathSync(p);
+}
+
+export function lockPathProblem(dir: string, path: string): string | undefined {
+  if (isAbsolute(path) || normalize(path) !== path || path.split(/[\\/]/).includes(".."))
+    return `'${path}' is not a normalized relative path`;
+  if (userZone.some((z) => path === z || path.startsWith(z)) || path === lockFile) return `'${path}' is not in the generated zone`;
+  const root = realpathSync(dir);
+  const real = nearestExisting(join(dir, path));
+  const rel = relative(root, real);
+  if (rel.startsWith("..") || isAbsolute(rel)) return `'${path}' resolves outside the project (${real})`;
+  if (existsSync(join(dir, path)) && realpathSync(join(dir, path)) !== join(root, path)) return `'${path}' goes through a symlink`;
+  return undefined;
+}
+
+function strayFiles(dir: string, known: Set<string>): string[] {
+  const out: string[] = [];
+  const walk = (rel: string, inZone: boolean) => {
+    const abs = join(dir, rel);
+    if (!existsSync(abs)) return;
+    for (const d of readdirSync(abs, { withFileTypes: true })) {
+      const child = rel ? `${rel}/${d.name}` : d.name;
+      const zone = inZone || d.name === "(generated)";
+      if (d.isDirectory()) walk(child, zone);
+      else if (zone && !known.has(child)) out.push(child);
+    }
+  };
+  walk("app/src", false);
+  return out.sort();
+}
+
+export class LockError extends Error {}
+
+export async function readLock(dir: string): Promise<Lock | null> {
+  let text: string;
   try {
-    return JSON.parse(await readFile(join(dir, lockFile), "utf8")) as Lock;
+    text = await readFile(join(dir, lockFile), "utf8");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw e;
   }
+  let lock: unknown;
+  try {
+    lock = JSON.parse(text);
+  } catch (e) {
+    throw new LockError(`${lockFile} is not valid JSON (${(e as Error).message}). Restore it from git, or delete it and rerun generate with --force.`);
+  }
+  const files = (lock as Lock | null)?.files;
+  if (!lock || typeof lock !== "object" || typeof (lock as Lock).irHash !== "string" || !files || typeof files !== "object" || Object.values(files).some((h) => typeof h !== "string"))
+    throw new LockError(`${lockFile} does not have the expected shape { owninfra, prettier, irHash, files }. Restore it from git, or delete it and rerun generate with --force.`);
+  return lock as Lock;
 }
 
 async function current(path: string): Promise<string | null> {
@@ -37,10 +87,24 @@ async function atomicWrite(path: string, contents: string) {
 }
 
 export async function write(files: FileSet, dir: string, meta: { owninfra: string; irHash: string }, opts: { force: boolean }): Promise<WriteReport> {
-  const previous = (await readLock(dir))?.files ?? {};
   const generated = files.filter((f) => f.zone === "generated");
   const next = new Set(generated.map((f) => f.path));
+  let previous: Record<string, string>;
+  try {
+    previous = (await readLock(dir))?.files ?? {};
+  } catch (e) {
+    if (e instanceof LockError) return { ok: false, badLock: e.message };
+    throw e;
+  }
+  for (const p of generated.map((f) => f.path)) {
+    const problem = lockPathProblem(dir, p);
+    if (problem) return { ok: false, badLock: `refusing to write ${problem}` };
+  }
   const orphans = Object.keys(previous).filter((p) => !next.has(p));
+  for (const p of Object.keys(previous)) {
+    const problem = lockPathProblem(dir, p);
+    if (problem) return { ok: false, badLock: `${lockFile} lists ${problem}; refusing to touch it. Restore the lock from git.` };
+  }
 
   const edited: string[] = [];
   for (const path of [...generated.map((f) => f.path), ...orphans]) {
@@ -77,5 +141,5 @@ export async function write(files: FileSet, dir: string, meta: { owninfra: strin
   };
   const lockText = JSON.stringify(lock, null, 2) + "\n";
   if ((await current(join(dir, lockFile))) !== lockText) await atomicWrite(join(dir, lockFile), lockText);
-  return { ok: true, written, unchanged, created, deleted: orphans.sort(), forced: opts.force ? edited.sort() : [] };
+  return { ok: true, written, unchanged, created, deleted: orphans.sort(), forced: opts.force ? edited.sort() : [], stray: strayFiles(dir, next) };
 }

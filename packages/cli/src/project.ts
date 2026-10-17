@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { compile, devDatabaseUrl, lockFile, write, type Lock } from "@owninfra/compiler";
+import { compile, devDatabaseUrl, lockFile, LockError, readLock, write, type Lock } from "@owninfra/compiler";
 import type { Io } from "./index.js";
 
 const version = "0.0.0";
@@ -63,12 +63,17 @@ export async function generate(args: string[], io: Io, dir = process.cwd()): Pro
   const git = spawnSync("git", ["status", "--porcelain", "--", "."], { cwd: dir, encoding: "utf8" });
   if (git.status === 0 && git.stdout.trim()) io.err("warning: the git tree has uncommitted changes");
   const report = await write(r.files, dir, { owninfra: version, irHash: r.irHash }, { force: args.includes("--force") });
+  if (!report.ok && "badLock" in report) {
+    io.err(`error: ${report.badLock}`);
+    return 1;
+  }
   if (!report.ok) {
     io.err("Refusing to overwrite generated files that were edited by hand since the last generate:");
     report.edited.forEach((p) => io.err(`  ${p}`));
     io.err("Move your change into app/src/custom/ or rerun with --force to discard it.");
     return 1;
   }
+  report.stray.forEach((p) => io.err(`warning: ${p} is in a (generated) folder but owninfra did not generate it; move it to app/src/custom/`));
   report.forced.forEach((p) => io.err(`warning: overwrote hand-edited ${p} (--force)`));
   report.deleted.forEach((p) => io.out(`deleted ${p}`));
   io.out(`generate: ${report.written.length} written, ${report.unchanged} unchanged, ${report.created.length} user files created, ${report.deleted.length} deleted`);
@@ -86,11 +91,16 @@ function run(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.Proc
 export async function dev(args: string[], io: Io, dir = process.cwd()): Promise<number> {
   const r = await compileHere(dir, io);
   if (!r) return 1;
-  let lock: Lock;
+  let lock: Lock | null;
   try {
-    lock = JSON.parse(await readFile(join(dir, lockFile), "utf8")) as Lock;
-  } catch {
-    io.err("No owninfra.lock.json here. Run 'owninfra generate' first.");
+    lock = await readLock(dir);
+  } catch (e) {
+    if (!(e instanceof LockError)) throw e;
+    io.err(`error: ${e.message}`);
+    return 1;
+  }
+  if (!lock) {
+    io.err(`No ${lockFile} here. Run 'owninfra generate' first.`);
     return 1;
   }
   if (lock.irHash !== r.irHash) {
