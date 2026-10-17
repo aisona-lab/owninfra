@@ -215,21 +215,34 @@ export function parse(raw: RawBlueprint): ParseResult {
   return { ok: true, model: build(raw), warnings };
 }
 
+const systemTables = new Set(["audit_events", "owninfra_meta"]);
+
 function checkNames(bp: RawBlueprint, errors: Issue[]) {
+  const owners = new Map<string, string>();
   bp.entities.forEach((e, ei) => {
+    const path = `entities[${ei}].name`;
     const table = tableName(e.name);
     const tableProblem = sqlIdentifierProblem(table);
-    if (tableProblem) errors.push({ path: `entities[${ei}].name`, message: `table name ${tableProblem}` });
+    if (tableProblem) errors.push({ path, message: `table name ${tableProblem}` });
+    if (systemTables.has(table)) errors.push({ path, message: `entity '${e.name}' maps to table '${table}', which is reserved for owninfra` });
+    const clash = owners.get(table);
+    if (clash && clash !== e.name) errors.push({ path, message: `entities '${clash}' and '${e.name}' both map to table '${table}'` });
+    owners.set(table, e.name);
     const columns = [...e.fields.filter((f) => f.type !== "files").map((f) => f.name), ...(e.workflow ? [e.workflow.field] : [])];
+    const tooLong: string[] = [];
     columns.forEach((c) => {
       const fi = e.fields.findIndex((f) => f.name === c);
-      const path = fi < 0 ? `entities[${ei}].workflow.field` : `entities[${ei}].fields[${fi}].name`;
-      if (isSystemColumn(c)) errors.push({ path, message: `'${c}' is a system column` });
+      const cpath = fi < 0 ? `entities[${ei}].workflow.field` : `entities[${ei}].fields[${fi}].name`;
+      if (isSystemColumn(c)) errors.push({ path: cpath, message: `'${c}' is a system column` });
       const problem = sqlIdentifierProblem(c);
-      if (problem) errors.push({ path, message: `column name ${problem}` });
-      else if (!tableProblem && Buffer.byteLength(`${table}_${c}_fkey`) > maxIdentifier)
-        errors.push({ path, message: `constraint name '${table}_${c}_fkey' is longer than ${maxIdentifier} bytes` });
+      if (problem) errors.push({ path: cpath, message: `column name ${problem}` });
+      else if (!tableProblem && Buffer.byteLength(`${table}_${c}_fkey`) > maxIdentifier) tooLong.push(c);
     });
+    if (tooLong.length)
+      errors.push({
+        path,
+        message: `table name '${table}' is too long for Postgres constraint names on ${tooLong.map((c) => `'${c}'`).join(", ")} (limit ${maxIdentifier} bytes for '<table>_<column>_fkey'); shorten the entity name`,
+      });
   });
 }
 
@@ -253,9 +266,14 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]) {
       continue;
     }
     const names = new Set(entity.fields.map((f) => f.name));
+    const refs = new Map(entity.fields.flatMap((f) => (f.type === "ref" ? [[f.name, f.to] as const] : [])));
     rows.forEach((row, i) => {
-      for (const k of Object.keys(row))
-        if (!names.has(k)) errors.push({ path: `seed.${key}[${i}].${k}`, message: `unknown field '${k}'` });
+      for (const k of Object.keys(row)) {
+        const p = `seed.${key}[${i}].${k}`;
+        if (!names.has(k)) errors.push({ path: p, message: `unknown field '${k}'` });
+        else if (refs.has(k))
+          errors.push({ path: p, message: `seed rows cannot set ref field '${k}' (to ${refs.get(k)}): seeded rows get generated ids, so references between seeds are not supported yet` });
+      }
     });
   }
 }

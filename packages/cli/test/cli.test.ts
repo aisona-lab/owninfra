@@ -73,6 +73,11 @@ describe("cli", () => {
     "kebabfield.yaml": "error entities[2].fields[6].name: column name 'needed-by' must be lowercase snake_case to be a SQL identifier",
     "systemcol.yaml": "error entities[2].fields[6].name: 'created_by' is a system column",
     "longname.yaml": "error entities[2].name: table name 'purchase_request_for_extremely_long_departmental_procurement_workflows' is longer than 63 bytes",
+    "tablebus.yaml": "error entities[2].name: entities 'Bus' and 'Buse' both map to table 'buses'",
+    "tablecategory.yaml": "error entities[2].name: entities 'Category' and 'Categorie' both map to table 'categories'",
+    "tableaudit.yaml": "error entities[1].name: entity 'AuditEvent' maps to table 'audit_events', which is reserved for owninfra",
+    "seedref.yaml": "error seed.PurchaseRequest[0].department: seed rows cannot set ref field 'department' (to Department): seeded rows get generated ids, so references between seeds are not supported yet",
+    "longfk.yaml": "error entities[2].name: table name 'purchase_request_for_extremely_long_departmental_procuremes' is too long for Postgres constraint names on 'title', 'description', 'amount', 'currency', 'department', 'vendor', 'needed_by', 'justification', 'rejection_reason', 'status' (limit 63 bytes for '<table>_<column>_fkey'); shorten the entity name",
     "unreach.yaml": "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
   };
 
@@ -114,6 +119,25 @@ describe("cli", () => {
     expect(refused.err).toContain("docker-compose.yml");
     expect((await gen("--force")).code).toBe(0);
     expect(readFileSync(join(dir, "docker-compose.yml"), "utf8")).toContain("postgres:16");
+  });
+
+  it("generate and dev explain a corrupt lock file instead of throwing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "owninfra-"));
+    writeFileSync(join(dir, "blueprint.yaml"), readFileSync(example, "utf8"));
+    writeFileSync(join(dir, "owninfra.lock.json"), "{ not json");
+    const err: string[] = [];
+    expect(await generate([], { out: () => {}, err: (l) => err.push(l) }, dir)).toBe(1);
+    expect(err.find((l) => l.startsWith("error:"))).toMatch(/^error: owninfra\.lock\.json is not valid JSON \(.*\)\. Restore it from git/);
+  });
+
+  it("generate warns about stray files in a (generated) folder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "owninfra-"));
+    writeFileSync(join(dir, "blueprint.yaml"), readFileSync(example, "utf8"));
+    await generate([], { out: () => {}, err: () => {} }, dir);
+    writeFileSync(join(dir, "app/src/lib/(generated)/mine.ts"), "export {};\n");
+    const err: string[] = [];
+    expect(await generate([], { out: () => {}, err: (l) => err.push(l) }, dir)).toBe(0);
+    expect(err).toContain("warning: app/src/lib/(generated)/mine.ts is in a (generated) folder but owninfra did not generate it; move it to app/src/custom/");
   });
 
   it("rejects planned and unknown commands", async () => {
