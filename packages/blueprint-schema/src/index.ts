@@ -3,7 +3,7 @@ import type { ZodIssue } from "zod";
 import { Blueprint } from "./schema.js";
 import { parse as parseModel, type Issue, type Model } from "./model.js";
 
-export { Blueprint, Field } from "./schema.js";
+export { Blueprint as RawBlueprint, Field as RawField } from "./schema.js";
 export * from "./model.js";
 export * from "./naming.js";
 

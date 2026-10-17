@@ -1,0 +1,30 @@
+import { notFound, redirect } from "next/navigation";
+import { auditLog } from "@/lib/(generated)/repository";
+import { currentUser } from "@/lib/(generated)/session";
+
+export default async function AuditPage() {
+  const user = await currentUser();
+  if (!user) redirect("/api/auth/signin");
+  const rows = await auditLog(user).catch(() => null);
+  if (!rows) notFound();
+  return (
+    <main>
+      <h1>Audit log</h1>
+      <table>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={String(r.id)}>
+              <td>{String(r.at)}</td>
+              <td>{String(r.actor)}</td>
+              <td>{String(r.action)}</td>
+              <td>{String(r.entity)}</td>
+              <td>
+                <pre>{JSON.stringify({ before: r.before, after: r.after }, null, 2)}</pre>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </main>
+  );
+}

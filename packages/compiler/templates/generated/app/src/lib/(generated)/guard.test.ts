@@ -1,0 +1,71 @@
+import { describe, expect, it } from "vitest";
+import { getTableColumns, type Table } from "drizzle-orm";
+import { authorize, decideTransition } from "./guard";
+import { coerce } from "./coerce";
+import { registry } from "./registry";
+import * as schema from "./schema";
+import type { Row } from "./types";
+
+const owner = "owner@example.test";
+const other = "other@example.test";
+
+describe.each(registry.entities.filter((e) => e.workflow))("$entity workflow", (entity) => {
+  const wf = entity.workflow!;
+  const row = (status: string, createdBy = owner): Row => ({ id: "00000000-0000-0000-0000-000000000000", created_by: createdBy, [wf.field]: status });
+
+  it.each(wf.transitions.flatMap((t) => t.forbiddenFor.map((role) => [t.id, role] as const)))("%s is forbidden for %s", (id, role) => {
+    const t = wf.transitions.find((x) => x.id === id)!;
+    const d = decideTransition({ email: other, roles: [role] }, entity, row(t.from), id);
+    expect(d.ok).toBe(false);
+  });
+
+  it.each(wf.transitions.map((t) => [t.id, t] as const))("%s succeeds for an allowed role", (_id, t) => {
+    const actor = t.ownerOnly ? owner : other;
+    const values = Object.fromEntries(t.requireFields.map((f) => [f, "because"]));
+    const d = decideTransition({ email: actor, roles: [t.roles[0]] }, entity, row(t.from), t.id, { ...row(t.from), ...values });
+    expect(d).toMatchObject({ ok: true });
+  });
+
+  it.each(wf.transitions.filter((t) => t.forbidCreator).map((t) => [t.id, t] as const))("%s is refused to the creator", (_id, t) => {
+    const d = decideTransition({ email: owner, roles: [...t.roles] }, entity, row(t.from), t.id);
+    expect(d).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it("refuses a transition from the wrong state", () => {
+    const t = wf.transitions[0];
+    const wrong = wf.states.find((s) => s.id !== t.from)!.id;
+    expect(decideTransition({ email: other, roles: [...registry.roles] }, entity, row(wrong), t.id)).toMatchObject({ ok: false, status: 409 });
+  });
+});
+
+describe("policies", () => {
+  it.each(registry.policies.filter((p) => p.scope === "own").map((p) => [p.entity, p.role, p.action] as const))("%s %s %s is limited to own rows", (name, role, action) => {
+    const entity = registry.entities.find((e) => e.entity === name)!;
+    const p = registry.policies.find((x) => x.entity === name && x.role === role && x.action === action)!;
+    const status = p.inStates?.[0] ?? entity.workflow?.initial;
+    const r = (createdBy: string): Row => ({ id: "x", created_by: createdBy, ...(entity.workflow ? { [entity.workflow.field]: status } : {}) });
+    expect(authorize({ email: owner, roles: [role] }, entity, action, r(owner))).toBe(true);
+    expect(authorize({ email: owner, roles: [role] }, entity, action, r(other))).toBe(false);
+  });
+
+  it("denies roles with no policy", () => {
+    for (const entity of registry.entities) expect(authorize({ email: owner, roles: [] }, entity, "read")).toBe(false);
+  });
+});
+
+describe("schema", () => {
+  it("matches the registry columns", () => {
+    for (const entity of registry.entities) {
+      const table = (schema as unknown as Record<string, Table>)[entity.table];
+      const names = Object.values(getTableColumns(table)).map((c) => c.name);
+      const expected = ["id", ...entity.columns.map((c) => c.name), ...(entity.workflow ? [entity.workflow.field] : []), "created_at", "updated_at", "created_by"];
+      expect(names).toEqual(expected);
+    }
+  });
+
+  it("coerces form input and reports every invalid field", () => {
+    const entity = registry.entities[0];
+    const r = coerce(entity, { nope: 1 }, "create");
+    expect(r.ok).toBe(false);
+  });
+});
