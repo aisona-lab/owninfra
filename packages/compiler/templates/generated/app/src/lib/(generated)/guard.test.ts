@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getTableColumns, type Table } from "drizzle-orm";
-import { authorize, decideTransition, transitionInputProblems } from "./guard";
-import { coerce } from "./coerce";
+import { authorize, createColumns, decideTransition, transitionInputProblems } from "./guard";
+import { coerce, fromForm } from "./coerce";
 import { registry } from "./registry";
 import * as schema from "./schema";
 import type { Row } from "./types";
@@ -70,9 +70,44 @@ describe("schema", () => {
     }
   });
 
-  it("coerces form input and reports every invalid field", () => {
+  it("reports every invalid field by name", () => {
     const entity = registry.entities[0];
     const r = coerce(entity, { nope: 1 }, "create");
-    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({ ok: false, errors: { nope: "unknown field" } });
+  });
+});
+
+describe("create input", () => {
+  it.each(registry.entities.filter((e) => e.workflow).map((e) => [e.entity, e] as const))("%s create omits transition-only fields", (_name, entity) => {
+    const later = entity.workflow!.transitions.flatMap((t) => t.requireFields);
+    const createable = createColumns(entity).map((c) => c.name);
+    for (const f of later) {
+      const c = entity.columns.find((x) => x.name === f)!;
+      if (c.required) continue;
+      expect(createable).not.toContain(f);
+      expect(coerce(entity, { [f]: "x" }, "create")).toMatchObject({ ok: false, errors: { [f]: "cannot be set when creating" } });
+    }
+  });
+
+  it.each(registry.entities.flatMap((e) => e.columns.map((c) => [`${e.entity}.${c.name}`, e, c] as const)))("%s runs form input through its codec", (_n, entity, c) => {
+    const form = new FormData();
+    const r = coerce(entity, fromForm([c], form), "update");
+    expect(r).toMatchObject({ ok: true });
+    form.set(c.name, c.input === "bool" ? "on" : "\u0000not valid\u0000");
+    const bad = coerce(entity, fromForm([c], form), "update");
+    if (c.input === "bool") expect(bad).toMatchObject({ ok: true, values: { [c.name]: true } });
+    else expect(bad).toMatchObject({ ok: false, errors: { [c.name]: expect.any(String) } });
+  });
+
+  it("reads datetime-local input as UTC and integers as numbers", () => {
+    const columns = registry.entities.flatMap((e) => e.columns);
+    const dt = columns.find((c) => c.input === "datetime");
+    const int = columns.find((c) => c.input === "int");
+    const form = new FormData();
+    if (dt) form.set(dt.name, "2026-01-01T10:30");
+    if (int) form.set(int.name, "42");
+    const out = fromForm([dt, int].filter((c) => c !== undefined), form);
+    if (dt) expect(out[dt.name]).toBe("2026-01-01T10:30Z");
+    if (int) expect(out[int.name]).toBe(42);
   });
 });

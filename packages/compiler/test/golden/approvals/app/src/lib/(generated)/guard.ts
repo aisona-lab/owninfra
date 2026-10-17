@@ -64,6 +64,11 @@ export function transitionInputProblems(
     .map((k) => `field '${k}' cannot be set by '${transitionId}'`);
 }
 
+export function createColumns(entity: EntityDef) {
+  const later = new Set(entity.workflow?.transitions.flatMap((t) => t.requireFields) ?? []);
+  return entity.columns.filter((c) => c.required || !later.has(c.name));
+}
+
 export function availableTransitions(user: User, entity: EntityDef, row: Row): Transition[] {
   return (entity.workflow?.transitions ?? []).filter((t) => {
     const d = decideTransition(user, entity, row, t.id, Object.fromEntries(t.requireFields.map((f) => [f, "x"])));

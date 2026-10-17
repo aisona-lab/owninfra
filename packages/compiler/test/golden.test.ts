@@ -30,3 +30,11 @@ describe("golden: approvals", async () => {
     expect(f.contents).toBe(readFileSync(join(goldenDir, f.path), "utf8"));
   });
 });
+
+describe("shared codecs", () => {
+  it("ships the blueprint-schema codec table to the app unchanged", async () => {
+    const { staticTemplates } = await import("../src/static-templates.js");
+    const shipped = staticTemplates.find((t) => t.path === "app/src/lib/(generated)/codecs.ts");
+    expect(shipped?.contents).toBe(readFileSync(new URL("../../blueprint-schema/src/codecs.ts", import.meta.url), "utf8"));
+  });
+});

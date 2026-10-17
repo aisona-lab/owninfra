@@ -9,6 +9,11 @@ const files = walk(root)
     const [zone, ...rest] = relative(root, abs).split("/");
     return { zone, path: rest.join("/"), contents: readFileSync(abs, "utf8") };
   })
+  .concat({
+    zone: "generated",
+    path: "app/src/lib/(generated)/codecs.ts",
+    contents: readFileSync(fileURLToPath(new URL("../../blueprint-schema/src/codecs.ts", import.meta.url)), "utf8"),
+  })
   .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 writeFileSync(
   fileURLToPath(new URL("../src/static-templates.ts", import.meta.url)),
