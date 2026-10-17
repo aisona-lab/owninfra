@@ -92,7 +92,12 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const codecs: Record<FieldType, Codec> = {
   string: (f, raw) => text(f, raw),
   text: (f, raw) => text(f, raw),
-  email: (f, raw) => text(f, raw, (s) => (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) ? null : "must be an email address")),
+  email: (f, raw) =>
+    text(f, raw, (s) =>
+      /^[^@\s\u200b-\u200d\u2060\ufeff]+@[^@\s\u200b-\u200d\u2060\ufeff]+\.[^@\s\u200b-\u200d\u2060\ufeff]+$/.test(s)
+        ? null
+        : "must be an email address",
+    ),
   bool: (_f, raw) => (typeof raw === "boolean" ? ok(raw) : fail("must be a boolean")),
   int: (f, raw) => {
     if (typeof raw !== "number" || !Number.isInteger(raw)) return fail("must be an integer");

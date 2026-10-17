@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableColumns, type Table } from "drizzle-orm";
-import { authorize, createColumns, decideTransition, transitionInputProblems } from "./guard";
+import { authorize, createColumns, decideTransition, transitionInputProblems, updateColumns } from "./guard";
 import { coerce, fromForm } from "./coerce";
 import { registry } from "./registry";
 import * as schema from "./schema";
@@ -36,6 +36,13 @@ describe.each(registry.entities.filter((e) => e.workflow))("$entity workflow", (
     expect(transitionInputProblems(entity, t.id, Object.fromEntries(t.requireFields.map((f) => [f, "x"])))).toEqual([]);
     expect(transitionInputProblems(entity, t.id, { [other]: "x" })).toEqual([`field '${other}' cannot be set by '${t.id}'`]);
     expect(transitionInputProblems(entity, t.id, { [wf.field]: wf.states[wf.states.length - 1].id })).toHaveLength(1);
+  });
+
+  it.each(wf.transitions.filter((t) => t.requireFields.length).map((t) => [t.id, t] as const))("%s ignores stored require_fields values", (_id, t) => {
+    const actor = t.ownerOnly ? owner : other;
+    const stored = { ...row(t.from), ...Object.fromEntries(t.requireFields.map((f) => [f, "stored earlier"])) };
+    expect(decideTransition({ email: actor, roles: [t.roles[0]] }, entity, stored, t.id, {})).toMatchObject({ ok: false, status: 422 });
+    expect(decideTransition({ email: actor, roles: [t.roles[0]] }, entity, stored, t.id, Object.fromEntries(t.requireFields.map((f) => [f, null])))).toMatchObject({ ok: false, status: 422 });
   });
 
   it("refuses a transition from the wrong state", () => {
@@ -91,10 +98,10 @@ describe("create input", () => {
 
   it.each(registry.entities.flatMap((e) => e.columns.map((c) => [`${e.entity}.${c.name}`, e, c] as const)))("%s runs form input through its codec", (_n, entity, c) => {
     const form = new FormData();
-    const r = coerce(entity, fromForm([c], form), "update");
+    const r = coerce(entity, fromForm([c], form), "transition");
     expect(r).toMatchObject({ ok: true });
     form.set(c.name, c.input === "bool" ? "on" : "\u0000not valid\u0000");
-    const bad = coerce(entity, fromForm([c], form), "update");
+    const bad = coerce(entity, fromForm([c], form), "transition");
     if (c.input === "bool") expect(bad).toMatchObject({ ok: true, values: { [c.name]: true } });
     else expect(bad).toMatchObject({ ok: false, errors: { [c.name]: expect.any(String) } });
   });
@@ -102,7 +109,7 @@ describe("create input", () => {
   it.each(registry.entities.flatMap((e) => e.columns.filter((c) => c.required && ["string", "text", "email"].includes(c.input)).map((c) => [`${e.entity}.${c.name}`, e, c] as const)))(
     "%s rejects whitespace-only API and form input as required",
     (_n, entity, c) => {
-      expect(coerce(entity, { [c.name]: "   " }, "update")).toMatchObject({ ok: false, errors: { [c.name]: "is required" } });
+      expect(coerce(entity, { [c.name]: "   " }, "transition")).toMatchObject({ ok: false, errors: { [c.name]: "is required" } });
       const form = new FormData();
       form.set(c.name, "   ");
       expect(coerce(entity, fromForm([c], form), "create")).toMatchObject({ ok: false, errors: { [c.name]: "is required" } });
@@ -115,9 +122,9 @@ describe("create input", () => {
         for (const raw of ["", "\u200b", " \u200b\ufeff "]) {
           const form = new FormData();
           form.set(c.name, raw);
-          const viaApi = coerce(entity, { [c.name]: raw }, "update");
-          const viaForm = coerce(entity, fromForm([c], form), "update");
-          const expected = c.required ? { ok: false, errors: { [c.name]: "is required" } } : { ok: true, values: {} };
+          const viaApi = coerce(entity, { [c.name]: raw }, "transition");
+          const viaForm = coerce(entity, fromForm([c], form), "transition");
+          const expected = c.required ? { ok: false, errors: { [c.name]: "is required" } } : { ok: true, values: { [c.name]: null } };
           expect(viaApi).toEqual(expected);
           expect(viaForm).toEqual(expected);
         }
@@ -132,8 +139,8 @@ describe("create input", () => {
       const form = new FormData();
       form.set(str.name, `\u200b ${v} \ufeff`);
       form.set(text.name, `\r\n  ${v}\r\nline 2\r\n\r\n`);
-      const viaForm = coerce(entity, fromForm([str, text], form), "update");
-      const viaApi = coerce(entity, { [str.name]: `${v}\n`, [text.name]: `  ${v}\nline 2` }, "update");
+      const viaForm = coerce(entity, fromForm([str, text], form), "transition");
+      const viaApi = coerce(entity, { [str.name]: `${v}\n`, [text.name]: `  ${v}\nline 2` }, "transition");
       expect(viaForm).toEqual({ ok: true, values: { [str.name]: v, [text.name]: `  ${v}\nline 2` } });
       expect(viaApi).toEqual(viaForm);
     }
@@ -145,6 +152,23 @@ describe("create input", () => {
         const r = coerce(entity, { [c.name]: " \u200b " }, "create");
         if (r.ok) expect(c.name in r.values).toBe(false);
         else expect(r.errors[c.name]).toBeUndefined();
+      }
+  });
+
+  it.each(registry.entities.filter((e) => e.workflow).map((e) => [e.entity, e] as const))("%s PATCH refuses fields that only a transition sets", (_n, entity) => {
+    for (const f of new Set(entity.workflow!.transitions.flatMap((t) => t.requireFields))) {
+      const form = new FormData();
+      form.set(f, "x");
+      expect(coerce(entity, { [f]: "x" }, "update")).toEqual({ ok: false, errors: { [f]: "can only be set by its transition" } });
+      expect(coerce(entity, fromForm(entity.columns, form), "update")).toMatchObject({ ok: false, errors: { [f]: "can only be set by its transition" } });
+    }
+  });
+
+  it("a blank PATCH clears optional fields and refuses required ones", () => {
+    for (const entity of registry.entities)
+      for (const c of updateColumns(entity).filter((x) => x.input !== "bool")) {
+        const r = coerce(entity, { [c.name]: " \u200b " }, "update");
+        expect(r).toEqual(c.required ? { ok: false, errors: { [c.name]: "is required" } } : { ok: true, values: { [c.name]: null } });
       }
   });
 

@@ -90,6 +90,42 @@ await Promise.all([req.page.waitForURL(/purchase_requests\/[0-9a-f-]{36}$/), req
 const viaForm = await (await req.page.request.get(`${base}/api/e/purchase_requests/${req.page.url().split("/").pop()}`)).json();
 check(viaForm.title === joined[1] && viaForm.currency === "EUR" && viaForm.description === "first\n  second", `form title ${JSON.stringify(joined[1])}, blank currency, CRLF description -> title=${JSON.stringify(viaForm.title)} currency=${viaForm.currency} description=${JSON.stringify(viaForm.description)}`);
 
+const mgr = await signIn(browser, "manager@acme.example");
+const draft = await (await req.page.request.post(`${base}/api/e/purchase_requests`, { data: { title: `Exploit ${stamp}`, amount: "1", department: dept, vendor: vendorId, justification: "j", description: "to clear" } })).json();
+const step = async (label, res, want) => {
+  const body = await res.text();
+  check(res.status() === want, `exploit ${label} -> ${res.status()} ${body.slice(0, 160)}`);
+  return body;
+};
+await step("requester PATCH rejection_reason on draft", await req.page.request.patch(`${base}/api/e/purchase_requests/${draft.id}`, { data: { rejection_reason: "pre-filled" } }), 422);
+await step("requester submit", await req.page.request.post(`${base}/api/e/purchase_requests/${draft.id}/transitions/submit`), 200);
+await step("manager reject with blank reason", await mgr.page.request.post(`${base}/api/e/purchase_requests/${draft.id}/transitions/manager_reject`, { data: { rejection_reason: " \u200b " } }), 422);
+await step("manager reject with no reason", await mgr.page.request.post(`${base}/api/e/purchase_requests/${draft.id}/transitions/manager_reject`), 422);
+await mgr.page.goto(`${base}/e/purchase_requests/${draft.id}`);
+const rejectForm = mgr.page.locator("form:has(button:text-is('manager_reject'))");
+await rejectForm.locator("#f-rejection_reason").fill("   ");
+await rejectForm.locator("button").click();
+await rejectForm.locator("#e-rejection_reason, .error").first().waitFor();
+check((await rejectForm.locator(".error").first().innerText()).includes("requires rejection_reason"), `exploit form reject with blank reason -> "${await rejectForm.locator(".error").first().innerText()}"`);
+await step("manager reject with a reason", await mgr.page.request.post(`${base}/api/e/purchase_requests/${draft.id}/transitions/manager_reject`, { data: { rejection_reason: "over budget" } }), 200);
+
+const clearable = await (await req.page.request.post(`${base}/api/e/purchase_requests`, { data: { title: `Clear ${stamp}`, amount: "1", department: dept, vendor: vendorId, justification: "j", description: "to clear" } })).json();
+const cleared = await req.page.request.patch(`${base}/api/e/purchase_requests/${clearable.id}`, { data: { description: " \u200b " } });
+const clearedBody = await cleared.json();
+check(cleared.status() === 200 && clearedBody.description === null, `blank PATCH of optional description -> ${cleared.status()} description=${JSON.stringify(clearedBody.description)}`);
+const blankRequired = await req.page.request.patch(`${base}/api/e/purchase_requests/${clearable.id}`, { data: { title: "\u200b" } });
+check(blankRequired.status() === 422, `blank PATCH of required title -> ${blankRequired.status()} ${await blankRequired.text()}`);
+
+const zwEmail = await fin.page.request.post(`${base}/api/e/vendors`, { data: { name: `ZW ${stamp}`, tax_id: `Z${stamp}`, contact_email: "ap\u200b@acme.example" } });
+check(zwEmail.status() === 422, `API email with interior U+200B -> ${zwEmail.status()} ${await zwEmail.text()}`);
+await fin.page.goto(`${base}/e/vendors`);
+await fin.page.fill("#f-name", `ZW form ${stamp}`);
+await fin.page.fill("#f-tax_id", `ZF${stamp}`);
+await fin.page.fill("#f-contact_email", "ap\u200b@acme.example");
+await fin.page.click("button:text-is('Create')");
+await fin.page.locator("#e-contact_email").waitFor();
+check((await fin.page.locator("#e-contact_email").innerText()) === "contact_email must be an email address", `form email with interior U+200B -> "${await fin.page.locator("#e-contact_email").innerText()}"`);
+
 const pages = [
   ["requester@acme.example", "list", "/e/purchase_requests"],
   ["requester@acme.example", "create", "/e/purchase_requests#create", async (p) => p.click("button:text-is('Create')").then(() => p.locator(".field .error").first().waitFor())],

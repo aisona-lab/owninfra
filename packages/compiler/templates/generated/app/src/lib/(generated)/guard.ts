@@ -23,7 +23,7 @@ export function authorize(user: User, entity: EntityDef, action: CrudAction, row
 
 export type Decision = { ok: true; transition: Transition } | { ok: false; status: 403 | 404 | 409 | 422; reason: string };
 
-export function decideTransition(user: User, entity: EntityDef, row: Row, transitionId: string, values: Record<string, unknown> = row): Decision {
+export function decideTransition(user: User, entity: EntityDef, row: Row, transitionId: string, values: Record<string, unknown> = {}): Decision {
   const t = entity.workflow?.transitions.find((x) => x.id === transitionId);
   if (!t || !entity.workflow) return { ok: false, status: 404, reason: `unknown transition '${transitionId}'` };
   if (!authorize(user, entity, "read", row)) return { ok: false, status: 404, reason: "not found" };
@@ -47,9 +47,16 @@ export function transitionInputProblems(entity: EntityDef, transitionId: string,
     .map((k) => `field '${k}' cannot be set by '${transitionId}'`);
 }
 
+const transitionFields = (entity: EntityDef) => new Set(entity.workflow?.transitions.flatMap((t) => t.requireFields) ?? []);
+
 export function createColumns(entity: EntityDef) {
-  const later = new Set(entity.workflow?.transitions.flatMap((t) => t.requireFields) ?? []);
+  const later = transitionFields(entity);
   return entity.columns.filter((c) => c.required || !later.has(c.name));
+}
+
+export function updateColumns(entity: EntityDef) {
+  const later = transitionFields(entity);
+  return entity.columns.filter((c) => !later.has(c.name));
 }
 
 export function availableTransitions(user: User, entity: EntityDef, row: Row): Transition[] {

@@ -51,7 +51,7 @@ export async function get(user: User, table: string, id: string): Promise<Row> {
   return row;
 }
 
-function valuesOrThrow(entity: EntityDef, input: Record<string, unknown>, mode: "create" | "update") {
+function valuesOrThrow(entity: EntityDef, input: Record<string, unknown>, mode: "create" | "update" | "transition") {
   const r = coerce(entity, input, mode);
   if (!r.ok) throw new HttpError(422, describeErrors(r.errors), r.errors);
   return r.values;
@@ -98,11 +98,11 @@ export async function transition(user: User, table: string, id: string, transiti
   if (!workflow?.transitions.some((t) => t.id === transitionId)) throw new HttpError(404, `unknown transition '${transitionId}'`);
   const problems = transitionInputProblems(entity, transitionId, input);
   if (problems.length) throw new HttpError(422, problems.join("; "));
-  const values = valuesOrThrow(entity, input, "update");
+  const values = valuesOrThrow(entity, input, "transition");
   return withAudit(user.email, entity, `transition:${transitionId}`, async (tx) => {
     const before = await load(tx, entity, id, true);
     if (!before) throw new HttpError(404, "not found");
-    const d = decideTransition(user, entity, before, transitionId, { ...before, ...values });
+    const d = decideTransition(user, entity, before, transitionId, values);
     if (!d.ok) throw new HttpError(d.status, d.reason);
     const set = { ...values, [workflow.field]: d.transition.to, updated_at: new Date() };
     const [row] = await tx`update ${tx(entity.table)} set ${tx(set as Record<string, postgres.SerializableParameter>)} where id = ${id} returning *`;

@@ -50,3 +50,9 @@ describe("end-only normalization", () => {
     expect(parseValue({ name: "f", type: "string", max: 3 }, "\u200b abc \u200b")).toEqual({ ok: true, value: "abc" });
   });
 });
+
+describe("email", () => {
+  it.each(["a\u200b@b.example", "a@b\u200c.example", "a@b.ex\u2060ample", "a\ufeffb@c.example", "a@\u200db.example"])("rejects interior zero-width characters in %j", (raw) => {
+    expect(parseValue({ name: "f", type: "email" }, raw)).toEqual({ ok: false, error: "must be an email address" });
+  });
+});
