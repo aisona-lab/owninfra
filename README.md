@@ -40,7 +40,7 @@ node packages/cli/dist/bin.js validate examples/approvals/blueprint.yaml
 
 [`examples/approvals/blueprint.yaml`](examples/approvals/blueprint.yaml) is a complete spend-approval tool: roles, entities, CRUD and ownership permissions, a workflow with role-gated transitions, and dev/prod environments. The schema is published as Zod and as [JSON Schema](packages/blueprint-schema/blueprint.schema.json) for editor autocompletion via `yaml-language-server`. Fields marked v1 are accepted and ignored with a warning.
 
-`validate` runs harness level L0: schema checks plus semantic checks (references resolve, roles and states exist, no unreachable workflow states, `own` rules require ownership).
+`validate` runs harness level L0: schema checks plus semantic checks (references resolve, roles and states exist, no unreachable workflow states, no dead-end states (every non-final state needs an outgoing transition), `own` rules require ownership).
 
 ## Repo layout
 

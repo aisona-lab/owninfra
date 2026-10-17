@@ -77,6 +77,9 @@ export function checkSemantics(bp: Blueprint): { errors: Issue[]; warnings: Issu
     }
     for (const s of states)
       if (!reachable.has(s)) errors.push({ path: `${wp}.states`, message: `state '${s}' is unreachable from '${wf.initial}'` });
+    for (const s of wf.states)
+      if (!s.final && !wf.transitions.some((t) => t.from === s.id))
+        errors.push({ path: `${wp}.states`, message: `state '${s.id}' has no outgoing transitions and is not final` });
     if (wf.notify) warnings.push({ path: `${wp}.notify`, message: "notifications are v1 and ignored by the MVP" });
   });
 

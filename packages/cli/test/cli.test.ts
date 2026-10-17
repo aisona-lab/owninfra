@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +39,28 @@ describe("cli", () => {
   it("fails on a missing file", async () => {
     const r = await cli("validate", "/nonexistent/blueprint.yaml");
     expect(r.code).toBe(1);
-    expect(r.err).toBe("Cannot read /nonexistent/blueprint.yaml");
+    expect(r.err).toBe("Cannot read /nonexistent/blueprint.yaml: ENOENT");
+  });
+
+  it("reports when the path is a directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "owninfra-"));
+    const r = await cli("validate", dir);
+    expect(r.code).toBe(1);
+    expect(r.err).toBe(`Cannot read ${dir}: EISDIR`);
+  });
+
+  it("reports dead-end workflow states", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "owninfra-")), "blueprint.yaml");
+    writeFileSync(file, readFileSync(example, "utf8").replace("final: true }\n        - { id: paid", "}\n        - { id: paid"));
+    const r = await cli("validate", file);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("state 'rejected' has no outgoing transitions and is not final");
+  });
+
+  const badDir = "/workspace/verify/bad";
+  const repros = existsSync(badDir) ? readdirSync(badDir).filter((f) => f.endsWith(".yaml")) : [];
+  it.skipIf(!repros.length).each(repros)("rejects verifier repro %s", async (name) => {
+    expect((await cli("validate", join(badDir, name))).code).not.toBe(0);
   });
 
   it("rejects planned and unknown commands", async () => {

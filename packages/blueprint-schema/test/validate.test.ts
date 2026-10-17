@@ -71,6 +71,7 @@ describe("validateBlueprint", () => {
     expect(messages(bp)).toEqual([
       "entities[2].workflow.transitions[7].from: 'rejected' is final and cannot have outgoing transitions",
       "entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
+      "entities[2].workflow.states: state 'archived' has no outgoing transitions and is not final",
     ]);
   });
 
@@ -97,6 +98,24 @@ describe("validateBlueprint", () => {
         "permissions.PurchaseRequest.requester.update.in_states: unknown state 'open'",
       ]),
     );
+  });
+
+  it("detects dead-end states", () => {
+    const bp = example();
+    const wf = bp.entities[2].workflow;
+    wf.states.push({ id: "on_hold" });
+    wf.transitions.push({ id: "hold", from: "submitted", to: "on_hold", roles: ["manager"] });
+    expect(messages(bp)).toEqual(["entities[2].workflow.states: state 'on_hold' has no outgoing transitions and is not final"]);
+  });
+
+  it("explains malformed permission rules", () => {
+    const bp = example();
+    bp.permissions.Vendor.manager = "read";
+    bp.permissions.PurchaseRequest.manager = { read: "everyone" };
+    expect(messages(bp)).toEqual([
+      "permissions.Vendor.manager: must be a list of actions (create, read, update, delete) or a map of action to rule",
+      "permissions.PurchaseRequest.manager: must be a list of actions (create, read, update, delete) or a map of action to rule",
+    ]);
   });
 
   it("flags duplicate names", () => {

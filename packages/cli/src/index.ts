@@ -34,8 +34,8 @@ async function validate(file: string, io: Io): Promise<number> {
   let source: string;
   try {
     source = await readFile(file, "utf8");
-  } catch {
-    io.err(`Cannot read ${file}`);
+  } catch (e) {
+    io.err(`Cannot read ${file}: ${(e as NodeJS.ErrnoException).code ?? String(e)}`);
     return 1;
   }
   const result = validateBlueprintYaml(source);

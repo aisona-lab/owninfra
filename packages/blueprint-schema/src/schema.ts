@@ -80,15 +80,17 @@ const Entity = z
 
 export const crudActions = ["create", "read", "update", "delete"] as const;
 const Scope = z.enum(["all", "own"]);
-const Rule = z.union([
-  z.boolean(),
-  Scope,
-  z.object({ own: z.boolean().optional(), in_states: z.array(id).optional() }).strict(),
-]);
-const RolePermission = z.union([
-  z.array(z.enum(crudActions)),
-  z.object({ create: Rule.optional(), read: Rule.optional(), update: Rule.optional(), delete: Rule.optional() }).strict(),
-]);
+const Rule = z.union(
+  [z.boolean(), Scope, z.object({ own: z.boolean().optional(), in_states: z.array(id).optional() }).strict()],
+  { errorMap: () => ({ message: "must be true, false, 'all', 'own' or { own, in_states }" }) },
+);
+const RolePermission = z.union(
+  [
+    z.array(z.enum(crudActions)),
+    z.object({ create: Rule.optional(), read: Rule.optional(), update: Rule.optional(), delete: Rule.optional() }).strict(),
+  ],
+  { errorMap: () => ({ message: "must be a list of actions (create, read, update, delete) or a map of action to rule" }) },
+);
 
 const Environment = z
   .object({
