@@ -1,5 +1,6 @@
 import type { Blueprint as RawBlueprint } from "./schema.js";
 import { crudActions } from "./schema.js";
+import { canonicalDecimal, parseDecimal } from "./decimal.js";
 import { isSystemColumn, maxIdentifier, sqlIdentifierProblem, tableName } from "./naming.js";
 
 export interface Issue {
@@ -260,8 +261,8 @@ function seedValueProblem(f: RawBlueprint["entities"][number]["fields"][number],
     case "int":
       return Number.isInteger(v) ? range(f, v as number) : "must be an integer";
     case "decimal": {
-      const n = typeof v === "number" ? v : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN;
-      return Number.isNaN(n) ? "must be a number" : range(f, n);
+      const d = parseDecimal(v);
+      return d ? range(f, Number(`${d.negative ? "-" : ""}${d.digits}e${d.exponent}`)) : "must be a number";
     }
     case "date":
       return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? undefined : "must be a date (YYYY-MM-DD)";
@@ -280,6 +281,19 @@ function seedValueProblem(f: RawBlueprint["entities"][number]["fields"][number],
       if (f.pattern !== undefined && !new RegExp(f.pattern).test(v)) return `must match ${f.pattern}`;
       return undefined;
     }
+  }
+}
+
+function uniqueKey(f: RawBlueprint["entities"][number]["fields"][number], v: unknown): string | null {
+  if (v === undefined || v === null || seedValueProblem(f, v)) return null;
+  switch (f.type) {
+    case "int":
+    case "decimal":
+      return canonicalDecimal(v, f.type === "decimal" ? f.scale : 0);
+    case "bool":
+      return String(v === true);
+    default:
+      return String(v);
   }
 }
 
@@ -313,12 +327,15 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]) {
     for (const f of entity.fields.filter((x) => x.unique)) {
       const seen = new Map<string, number>();
       rows.forEach((row, i) => {
-        if (row[f.name] === undefined || row[f.name] === null) return;
-        const v = JSON.stringify(row[f.name]);
-        const first = seen.get(v);
+        const raw = row[f.name] === undefined ? f.default : row[f.name];
+        const key2 = uniqueKey(f, raw);
+        if (key2 === null) return;
+        const first = seen.get(key2);
+        const shown = typeof raw === "string" ? `'${raw}'` : String(raw);
+        const how = row[f.name] === undefined ? " (from the field default)" : "";
         if (first !== undefined)
-          errors.push({ path: `seed.${key}[${i}].${f.name}`, message: `duplicate value ${v} in unique field '${f.name}' (also in seed.${key}[${first}])` });
-        else seen.set(v, i);
+          errors.push({ path: `seed.${key}[${i}].${f.name}`, message: `duplicate value ${shown}${how} in unique field '${f.name}' (same as seed.${key}[${first}])` });
+        else seen.set(key2, i);
       });
     }
     rows.forEach((row, i) => {

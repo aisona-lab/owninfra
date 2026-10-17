@@ -84,7 +84,9 @@ describe("cli", () => {
     "longfield.yaml": "error entities[2].fields[6].name: column name 'fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff' makes the constraint name 'purchase_requests_fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_fkey' longer than 63 bytes; shorten the field name",
     "tablepg.yaml": "error entities[1].table: table name 'pg_class' starts with 'pg_', which Postgres reserves for its catalog (pg_catalog is searched first, so it would shadow the table)",
     "tablelong.yaml": "error entities[1].table: table name 'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv' is longer than 63 bytes; shorten the table name",
-    "seedunique.yaml": "error seed.Department[1].code: duplicate value \"ENG\" in unique field 'code' (also in seed.Department[0])",
+    "seedunique.yaml": "error seed.Department[1].code: duplicate value 'ENG' in unique field 'code' (same as seed.Department[0])",
+    "seednumeric.yaml": "error seed.Vendor[1].vendor_no: duplicate value '1.00' in unique field 'vendor_no' (same as seed.Vendor[0])",
+    "seeddefault.yaml": "error seed.Vendor[1].slot: duplicate value 7 (from the field default) in unique field 'slot' (same as seed.Vendor[0])",
     "unreach.yaml": "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
   };
 
@@ -96,6 +98,22 @@ describe("cli", () => {
 
   it("covers every invalid fixture", () => {
     expect(readdirSync(fixtures).sort()).toEqual(Object.keys(expectedFirstError).sort());
+  });
+
+  it("reports every numeric variant that Postgres would treat as equal", async () => {
+    const r = await cli("validate", join(fixtures, "seednumeric.yaml"));
+    expect(r.err.split("\n").filter((l) => l.startsWith("error ")).map((l) => l.split(":")[0])).toEqual([
+      "error seed.Vendor[1].vendor_no",
+      "error seed.Vendor[2].vendor_no",
+      "error seed.Vendor[3].vendor_no",
+      "error seed.Vendor[4].vendor_no",
+      "error seed.Vendor[6].vendor_no",
+    ]);
+  });
+
+  it("accepts seeds whose unique strings differ only by case", async () => {
+    const file = fileURLToPath(new URL("fixtures/valid/seedcase.yaml", import.meta.url));
+    expect(await cli("validate", file)).toMatchObject({ code: 0, out: `${file}: valid` });
   });
 
   it("init copies the example and is idempotent", async () => {
