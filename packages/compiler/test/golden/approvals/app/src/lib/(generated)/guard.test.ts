@@ -141,6 +141,25 @@ describe("create input", () => {
     },
   );
 
+  it.each(
+    registry.entities.flatMap((e) =>
+      e.columns
+        .filter((c) => c.required && ["string", "text", "email"].includes(c.input))
+        .map((c) => [`${e.entity}.${c.name}`, e, c] as const),
+    ),
+  )("%s rejects whitespace-only API and form input as required", (_n, entity, c) => {
+    expect(coerce(entity, { [c.name]: "   " }, "update")).toMatchObject({
+      ok: false,
+      errors: { [c.name]: "is required" },
+    });
+    const form = new FormData();
+    form.set(c.name, "   ");
+    expect(coerce(entity, fromForm([c], form), "create")).toMatchObject({
+      ok: false,
+      errors: { [c.name]: "is required" },
+    });
+  });
+
   it("reads datetime-local input as UTC and integers as numbers", () => {
     const columns = registry.entities.flatMap((e) => e.columns);
     const dt = columns.find((c) => c.input === "datetime");

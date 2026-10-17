@@ -30,6 +30,7 @@ function bounds(f: FieldSpec, n: number): Parsed | null {
 
 function text(f: FieldSpec, raw: unknown, extra?: (s: string) => string | null): Parsed {
   if (typeof raw !== "string") return fail("must be a string");
+  if (f.required && raw.trim() === "") return fail("is required");
   if (raw.includes("\u0000")) return fail("must not contain NUL characters");
   if (f.max != null && [...raw].length > f.max) return fail(`must be at most ${f.max} characters`);
   if (f.pattern != null && !new RegExp(f.pattern).test(raw)) return fail(`must match ${f.pattern}`);

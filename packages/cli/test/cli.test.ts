@@ -87,6 +87,7 @@ describe("cli", () => {
     "seedunique.yaml": "error seed.Department[1].code: duplicate value 'ENG' in unique field 'code' (same as seed.Department[0])",
     "seednumeric.yaml": "error seed.Vendor[1].vendor_no: duplicate value '1.00' in unique field 'vendor_no' (same as seed.Vendor[0])",
     "seeddefault.yaml": "error seed.Vendor[1].slot: duplicate value 7 (from the field default) in unique field 'slot' (same as seed.Vendor[0])",
+    "seedblank.yaml": "error seed.Vendor[0].name: is required",
     "seeddatecal.yaml": "error seed.Vendor[0].since: '2026-02-30' is not a calendar date",
     "seeddatetimeunique.yaml": "error seed.Vendor[1].audited_at: duplicate value '2026-01-01T00:00:00.000Z' in unique field 'audited_at' (same as seed.Vendor[0])",
     "seeddatetimedateonly.yaml": "error seed.Vendor[0].audited_at: must be an ISO 8601 date-time with a time zone (Z or ±hh:mm); a date alone is ambiguous",
