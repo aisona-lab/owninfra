@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { format } from "prettier";
 import type { Column, Ir, IrEntity } from "./ir.js";
 import { staticTemplates } from "./static-templates.js";
+import { isGeneratedPath, isUserPath } from "./zones.js";
 
 export type Zone = "generated" | "user";
 export type OutFile = { path: string; contents: string; zone: Zone };
@@ -151,10 +152,8 @@ function check(files: OutFile[]) {
   for (const f of files) {
     if (seen.has(f.path)) throw new Error(`emit: '${f.path}' emitted twice`);
     seen.set(f.path, f.zone);
-    if (f.zone === "user" && !f.path.startsWith("app/src/custom/") && !f.path.startsWith("app/src/app/(custom)/"))
-      throw new Error(`emit: user file '${f.path}' is outside the user zone`);
-    if (f.zone === "generated" && (f.path.startsWith("app/src/custom/") || f.path.startsWith("app/src/app/(custom)/")))
-      throw new Error(`emit: generated file '${f.path}' is inside the user zone`);
+    if (f.zone === "user" && (!isUserPath(f.path) || isGeneratedPath(f.path))) throw new Error(`emit: user file '${f.path}' is outside the user zone`);
+    if (f.zone === "generated" && (!isGeneratedPath(f.path) || isUserPath(f.path))) throw new Error(`emit: generated file '${f.path}' is outside the generated zone`);
   }
   const routes = new Map<string, string>();
   for (const f of files) {

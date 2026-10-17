@@ -108,12 +108,42 @@ describe("lock paths", () => {
     expect(existsSync(join(dir, "app/src/custom/example.ts"))).toBe(true);
   });
 
+  it("cannot delete project files outside the generated zone even with matching hashes", async () => {
+    const { dir, fs } = await project();
+    const victims = [".git/HEAD", ".env", "README.md", "app/package-lock.json"];
+    for (const v of victims) {
+      mkdirSync(join(dir, v, ".."), { recursive: true });
+      writeFileSync(join(dir, v), "keep\n");
+    }
+    for (const v of [...victims, "README.MD", "APP/drizzle/0000_init.sql", "app/Drizzle/0000_init.sql"]) {
+      const lock = JSON.parse(readFileSync(join(dir, "owninfra.lock.json"), "utf8"));
+      lock.files = { ...lock.files, [v]: sha("keep\n") };
+      writeFileSync(join(dir, "owninfra.lock.json"), JSON.stringify(lock));
+      const r = await write(fs, dir, meta, { force: true });
+      expect(r).toEqual({ ok: false, badLock: `owninfra.lock.json lists '${v}' is not a generated path; refusing to touch it. Restore the lock from git.` });
+      delete lock.files[v];
+      writeFileSync(join(dir, "owninfra.lock.json"), JSON.stringify(lock));
+    }
+    for (const v of victims) expect(readFileSync(join(dir, v), "utf8")).toBe("keep\n");
+  });
+
+  it("explains a lock entry that is a directory", async () => {
+    const { dir, fs, tamper } = await project();
+    mkdirSync(join(dir, "app/drizzle/old"));
+    tamper("app/drizzle/old");
+    expect(await write(fs, dir, meta, { force: true })).toEqual({
+      ok: false,
+      badLock: "owninfra.lock.json lists 'app/drizzle/old' is a directory, not a generated file; refusing to touch it. Restore the lock from git.",
+    });
+    expect(existsSync(join(dir, "app/drizzle/old"))).toBe(true);
+  });
+
   it("refuses a lock entry that reaches outside through a symlinked folder", async () => {
     const { root, dir, fs, tamper } = await project();
     symlinkSync(root, join(dir, "app/drizzle/link"));
     tamper("app/drizzle/link/victim.txt");
     const r = await write(fs, dir, meta, { force: true });
-    expect("badLock" in r && r.badLock).toContain("resolves outside the project");
+    expect("badLock" in r && r.badLock).toContain("outside the generated zone");
     expect(readFileSync(join(root, "victim.txt"), "utf8")).toBe("keep\n");
   });
 

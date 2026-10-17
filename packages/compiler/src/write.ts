@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { isGeneratedPath } from "./zones.js";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative } from "node:path";
 import { prettierVersion, sha256, type FileSet } from "./emit.js";
@@ -12,23 +13,16 @@ export type WriteReport =
   | { ok: false; edited: string[] }
   | { ok: false; badLock: string };
 
-const userZone = ["blueprint.yaml", "app/src/custom/", "app/src/app/(custom)/"];
-
-function nearestExisting(path: string): string {
-  let p = path;
-  while (!existsSync(p)) p = dirname(p);
-  return realpathSync(p);
-}
-
 export function lockPathProblem(dir: string, path: string): string | undefined {
-  if (isAbsolute(path) || normalize(path) !== path || path.split(/[\\/]/).includes(".."))
-    return `'${path}' is not a normalized relative path`;
-  if (userZone.some((z) => path === z || path.startsWith(z)) || path === lockFile) return `'${path}' is not in the generated zone`;
-  const root = realpathSync(dir);
-  const real = nearestExisting(join(dir, path));
-  const rel = relative(root, real);
-  if (rel.startsWith("..") || isAbsolute(rel)) return `'${path}' resolves outside the project (${real})`;
-  if (existsSync(join(dir, path)) && realpathSync(join(dir, path)) !== join(root, path)) return `'${path}' goes through a symlink`;
+  if (isAbsolute(path) || normalize(path) !== path || !isGeneratedPath(path)) return `'${path}' is not a generated path`;
+  const root = realpathSync.native(dir);
+  const abs = join(dir, path);
+  let p = abs;
+  while (!existsSync(p)) p = dirname(p);
+  const real = realpathSync.native(p);
+  const expected = join(root, relative(dir, p));
+  if (real !== expected) return `'${path}' resolves to ${real}, outside the generated zone (case or symlink mismatch)`;
+  if (p === abs && statSync(abs).isDirectory()) return `'${path}' is a directory, not a generated file`;
   return undefined;
 }
 
