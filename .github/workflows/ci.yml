@@ -57,6 +57,6 @@ jobs:
       - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js dev --db-only && node $GITHUB_WORKSPACE/packages/cli/dist/bin.js dev --db-only
         working-directory: ${{ runner.temp }}/approvals
       - run: |
-          ! OWNINFRA_AUTH_STUB=1 npx next build
+          if OWNINFRA_AUTH_STUB=1 npx next build; then echo "stub build must fail"; exit 1; fi
           npx next build
         working-directory: ${{ runner.temp }}/approvals/app
