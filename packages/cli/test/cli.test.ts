@@ -87,6 +87,7 @@ describe("cli", () => {
     "seedunique.yaml": "error seed.Department[1].code: duplicate value 'ENG' in unique field 'code' (same as seed.Department[0])",
     "seednumeric.yaml": "error seed.Vendor[1].vendor_no: duplicate value '1.00' in unique field 'vendor_no' (same as seed.Vendor[0])",
     "seeddefault.yaml": "error seed.Vendor[1].slot: duplicate value 7 (from the field default) in unique field 'slot' (same as seed.Vendor[0])",
+    "seedzerowidth.yaml": "error seed.Vendor[0].name: is required",
     "seedblank.yaml": "error seed.Vendor[0].name: is required",
     "seeddatecal.yaml": "error seed.Vendor[0].since: '2026-02-30' is not a calendar date",
     "seeddatetimeunique.yaml": "error seed.Vendor[1].audited_at: duplicate value '2026-01-01T00:00:00.000Z' in unique field 'audited_at' (same as seed.Vendor[0])",
@@ -122,6 +123,11 @@ describe("cli", () => {
 
   it("accepts seeds whose unique strings differ only by case", async () => {
     const file = fileURLToPath(new URL("fixtures/valid/seedcase.yaml", import.meta.url));
+    expect(await cli("validate", file)).toMatchObject({ code: 0, out: `${file}: valid` });
+  });
+
+  it("accepts blank optional seed values", async () => {
+    const file = fileURLToPath(new URL("fixtures/valid/seedblanks.yaml", import.meta.url));
     expect(await cli("validate", file)).toMatchObject({ code: 0, out: `${file}: valid` });
   });
 

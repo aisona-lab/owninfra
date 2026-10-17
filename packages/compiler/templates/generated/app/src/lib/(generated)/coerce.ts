@@ -1,4 +1,4 @@
-import { parseValue, type FieldSpec } from "./codecs";
+import { normalizeText, parseValue, type FieldSpec } from "./codecs";
 import { createColumns } from "./guard";
 import type { Column, EntityDef } from "./types";
 
@@ -51,11 +51,11 @@ export function fromForm(columns: readonly Column[], form: FormData): Record<str
       out[c.name] = v === "on" || v === "true";
       continue;
     }
-    const s = typeof v === "string" ? v.trim() : "";
-    if (s === "") continue;
+    if (typeof v !== "string") continue;
+    const s = normalizeText(v);
     if (c.input === "int" && /^[+-]?\d+$/.test(s)) out[c.name] = Number(s);
     else if (c.input === "datetime" && localDateTime.test(s)) out[c.name] = `${s}Z`;
-    else out[c.name] = s;
+    else out[c.name] = v;
   }
   return out;
 }

@@ -132,3 +132,13 @@ describe("validateBlueprint", () => {
     expect(messages(bp)).toContain("roles: duplicate 'admin'");
   });
 });
+
+describe("seed normalization", () => {
+  it("stores blank optional values as null and normalized text otherwise", () => {
+    const r = validateBlueprintYaml(readFileSync(new URL("../../cli/test/fixtures/valid/seedblanks.yaml", import.meta.url), "utf8"));
+    if (!r.ok) throw new Error(JSON.stringify(r.errors));
+    const [a, b] = [...r.model.seed.rows].find(([e]) => e === "Vendor")![1];
+    expect(a).toMatchObject({ name: "A", contact_email: null, since: null, rank: null });
+    expect(b).toMatchObject({ contact_email: "b@acme.example", credit: null });
+  });
+});

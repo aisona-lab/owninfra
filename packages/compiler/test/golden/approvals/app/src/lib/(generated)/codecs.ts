@@ -30,7 +30,6 @@ function bounds(f: FieldSpec, n: number): Parsed | null {
 
 function text(f: FieldSpec, raw: unknown, extra?: (s: string) => string | null): Parsed {
   if (typeof raw !== "string") return fail("must be a string");
-  if (f.required && raw.trim() === "") return fail("is required");
   if (raw.includes("\u0000")) return fail("must not contain NUL characters");
   if (f.max != null && [...raw].length > f.max) return fail(`must be at most ${f.max} characters`);
   if (f.pattern != null && !new RegExp(f.pattern).test(raw)) return fail(`must match ${f.pattern}`);
@@ -143,9 +142,14 @@ export const codecs: Record<FieldType, Codec> = {
   files: () => fail("files are not supported yet"),
 };
 
+const invisible = /[\u200b-\u200d\u2060\ufeff]/g;
+
+export const normalizeText = (raw: string) => raw.replace(invisible, "").trim();
+
 export function parseValue(field: FieldSpec, raw: unknown): Parsed {
-  if (raw === null) return field.required ? fail("is required and cannot be null") : ok(null);
-  return codecs[field.type](field, raw);
+  const value = typeof raw === "string" ? normalizeText(raw) : raw;
+  if (value === null || value === "") return field.required ? fail("is required") : ok(null);
+  return codecs[field.type](field, value);
 }
 
 export const uniqueKey = (value: Canonical) => `${typeof value}:${String(value)}`;

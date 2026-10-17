@@ -9,8 +9,8 @@ import type { EntityDef } from "@/lib/(generated)/types";
 type Labels = { rows: Record<string, string>; refs: Record<string, Record<string, string>> };
 
 function shown(entity: EntityDef | undefined, labels: Labels | undefined, key: string, v: unknown): unknown {
+  if (v === null || v === undefined || v === "") return "—";
   if (key === "created_at" || key === "updated_at") return formatInstant(v);
-  if (key === "id") return labels?.rows[String(v)] ?? v;
   const c = entity?.columns.find((x) => x.name === key);
   return c ? formatValue(c, v, labels?.refs[key]) : v;
 }
@@ -45,10 +45,9 @@ export default async function AuditPage() {
             const entity = registry.entities.find((e) => e.entity === r.entity);
             const l = labels[String(r.entity)];
             const diff = Object.fromEntries(
-              Object.entries(changes(r.before, r.after)).map(([k, [b, a]]) => [
-                k,
-                [shown(entity, l, k, b), shown(entity, l, k, a)],
-              ]),
+              Object.entries(changes(r.before, r.after))
+                .filter(([k]) => k !== "id")
+                .map(([k, [b, a]]) => [k, [shown(entity, l, k, b), shown(entity, l, k, a)]]),
             );
             return (
               <tr key={String(r.id)}>

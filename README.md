@@ -56,7 +56,7 @@ owninfra dev             # docker compose Postgres, migrate, seed, next dev on :
 
 ## Generated app behavior
 
-- **Input values.** Seeds, forms and the JSON API all go through one codec per field type (`packages/blueprint-schema/src/codecs.ts`, shipped unchanged to `app/src/lib/(generated)/codecs.ts`). Form `datetime` inputs have no zone and are read as UTC. Times are displayed in UTC.
+- **Input values.** Seeds, forms and the JSON API all go through one codec per field type (`packages/blueprint-schema/src/codecs.ts`, shipped unchanged to `app/src/lib/(generated)/codecs.ts`). Before any type check, a string value is normalized: zero-width characters (U+200B to U+200D, U+2060, U+FEFF) are removed and surrounding whitespace is trimmed. The normalized value is what gets validated and stored, for every type and every input path. If nothing is left, a required field fails with `is required`, and an optional field is stored as `NULL`. Form `datetime` inputs have no zone and are read as UTC. Times are displayed in UTC.
 - **Create forms** show only the fields that can be set at create. A field that a transition requires (such as `rejection_reason`) is set by that transition, unless the field is itself required. The API rejects such a field on create with 422.
 - **Validation errors** come back as 422 with `{ "error": "...", "fields": { "<field>": "<message>" } }`. Forms show each message next to its field.
 - **Transitions:** `POST /api/e/<table>/<id>/transitions/<transition>` checks the request in this order:

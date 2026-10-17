@@ -160,6 +160,23 @@ describe("create input", () => {
     });
   });
 
+  it("treats blank and zero-width input the same for every type, through the API and forms", () => {
+    for (const entity of registry.entities)
+      for (const c of entity.columns.filter((x) => x.input !== "bool")) {
+        for (const raw of ["", "\u200b", " \u200b\ufeff "]) {
+          const form = new FormData();
+          form.set(c.name, raw);
+          const viaApi = coerce(entity, { [c.name]: raw }, "update");
+          const viaForm = coerce(entity, fromForm([c], form), "update");
+          const expected = c.required
+            ? { ok: false, errors: { [c.name]: "is required" } }
+            : { ok: true, values: { [c.name]: null } };
+          expect(viaApi).toEqual(expected);
+          expect(viaForm).toEqual(expected);
+        }
+      }
+  });
+
   it("reads datetime-local input as UTC and integers as numbers", () => {
     const columns = registry.entities.flatMap((e) => e.columns);
     const dt = columns.find((c) => c.input === "datetime");

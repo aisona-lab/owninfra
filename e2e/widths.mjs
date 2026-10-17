@@ -42,6 +42,35 @@ check(pr.status() === 201, `seed request with a 140-character unbroken title -> 
 const prId = (await pr.json()).id;
 await req.page.request.post(`${base}/api/e/purchase_requests/${prId}/transitions/submit`);
 
+const blankEmail = await fin.page.request.post(`${base}/api/e/vendors`, { data: { name: `Blank email ${stamp}`, tax_id: `B${stamp}`, contact_email: "" } });
+const blankEmailBody = await blankEmail.json();
+check(blankEmail.status() === 201 && blankEmailBody.contact_email === null, `API optional email "" -> ${blankEmail.status()} contact_email=${JSON.stringify(blankEmailBody.contact_email)}`);
+const zw = await req.page.request.post(`${base}/api/e/purchase_requests`, { data: { title: "\u200b", amount: "1", department: dept, vendor: vendorId, justification: "j" } });
+const zwBody = await zw.json();
+check(zw.status() === 422 && zwBody.fields?.title === "is required", `API required title "\\u200b" -> ${zw.status()} ${JSON.stringify(zwBody)}`);
+const blankDate = await req.page.request.post(`${base}/api/e/purchase_requests`, { data: { title: `Blank date ${stamp}`, amount: "1", department: dept, vendor: vendorId, justification: "j", needed_by: " \u200b\ufeff " } });
+const blankDateBody = await blankDate.json();
+check(blankDate.status() === 201 && blankDateBody.needed_by === null, `API optional date " \\u200b\\ufeff " -> ${blankDate.status()} needed_by=${JSON.stringify(blankDateBody.needed_by)}`);
+
+await req.page.goto(`${base}/e/purchase_requests`);
+await req.page.fill("#f-title", "\u200b");
+await req.page.fill("#f-amount", "1");
+await req.page.fill("#f-justification", "j");
+await req.page.selectOption("#f-department", dept);
+await req.page.selectOption("#f-vendor", vendorId);
+await req.page.click("button:text-is('Create')");
+await req.page.locator("#e-title").waitFor();
+const formError = await req.page.locator("#e-title").innerText();
+check(formError === "title is required", `form required title "\\u200b" -> inline "${formError}"`);
+
+await fin.page.goto(`${base}/e/vendors`);
+await fin.page.fill("#f-name", `Form blank email ${stamp}`);
+await fin.page.fill("#f-tax_id", `F${stamp}`);
+await fin.page.fill("#f-contact_email", " \u200b ");
+await Promise.all([fin.page.waitForURL(/vendors\/[0-9a-f-]{36}$/), fin.page.click("button:text-is('Create')")]);
+const formVendor = await (await fin.page.request.get(`${base}/api/e/vendors/${fin.page.url().split("/").pop()}`)).json();
+check(formVendor.contact_email === null, `form optional email " \\u200b " -> contact_email=${JSON.stringify(formVendor.contact_email)}`);
+
 const pages = [
   ["requester@acme.example", "list", "/e/purchase_requests"],
   ["requester@acme.example", "create", "/e/purchase_requests#create", async (p) => p.click("button:text-is('Create')").then(() => p.locator(".field .error").first().waitFor())],

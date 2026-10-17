@@ -82,7 +82,7 @@ const suites: Record<string, Suite> = {
     sqlType: "varchar(3)",
     cases: [yes("abc", "abc"), yes("ééé", "ééé"), yes("CZ1", "CZ1"), no("abcd"), no("a\u0000"), no(12, "stored")],
   },
-  text: { field: f({ type: "text" }), sqlType: "text", cases: [yes("long ".repeat(100), "long ".repeat(100)), no(true, "stored")] },
+  text: { field: f({ type: "text" }), sqlType: "text", cases: [yes("long ".repeat(100), "long ".repeat(100).trim()), yes("\u200b x \ufeff", "x"), no(true, "stored")] },
   email: { field: f({ type: "email" }), sqlType: "text", cases: [yes("a@b.cz", "a@b.cz"), no("not-an-email", "stored")] },
   bool: { field: f({ type: "bool" }), sqlType: "boolean", cases: [yes(true, true), yes(false, false), no("notbool", "changes"), no("true", "stored")] },
   enum: { field: f({ type: "enum", values: ["EUR", "USD"] }), sqlType: "text", cases: [yes("EUR", "EUR"), no("eur", "stored")] },
