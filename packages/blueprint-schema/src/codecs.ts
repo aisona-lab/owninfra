@@ -107,7 +107,7 @@ export const codecs: { [T in FieldType]: Codec<T> } = {
     if (m[8] !== "Z" && (+m[8].slice(1, 3) > 15 || +m[8].slice(4) > 59)) return fail(`'${m[8]}' is not a valid time zone offset`);
     if ((m[7] ?? "").length > 3) return fail("supports at most millisecond precision");
     const t = new Date(raw as string);
-    return Number.isNaN(t.getTime()) ? fail(`'${String(raw)}' is not a valid date-time`) : ok(t.toISOString());
+    return Number.isNaN(t.getTime()) || t.getUTCFullYear() < 1 || t.getUTCFullYear() > 9999 ? fail(`'${String(raw)}' is not a valid date-time between years 1 and 9999 UTC`) : ok(t.toISOString());
   },
   enum: (f, raw) => (typeof raw === "string" && f.values.includes(raw) ? ok(raw) : fail(`must be one of ${f.values.join(", ")}`)),
   ref: (f) => fail(`seed rows cannot set ref field '${f.name}' (to ${f.to}): seeded rows get generated ids, so references between seeds are not supported yet`),

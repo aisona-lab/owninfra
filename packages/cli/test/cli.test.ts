@@ -90,6 +90,8 @@ describe("cli", () => {
     "seeddatecal.yaml": "error seed.Vendor[0].since: '2026-02-30' is not a calendar date",
     "seeddatetimeunique.yaml": "error seed.Vendor[1].audited_at: duplicate value '2026-01-01T00:00:00.000Z' in unique field 'audited_at' (same as seed.Vendor[0])",
     "seeddatetimedateonly.yaml": "error seed.Vendor[0].audited_at: must be an ISO 8601 date-time with a time zone (Z or ±hh:mm); a date alone is ambiguous",
+    "seeddatetimemin.yaml": "error seed.Vendor[0].audited_at: '0001-01-01T00:30:00+01:00' is not a valid date-time between years 1 and 9999 UTC",
+    "seeddatetimemax.yaml": "error seed.Vendor[0].audited_at: '9999-12-31T23:30:00-01:00' is not a valid date-time between years 1 and 9999 UTC",
     "seeddecimalprecision.yaml": "error seed.Vendor[0].credit: does not fit numeric(4, 2): at most 2 digits before the decimal point",
     "seeddecimaloverflow.yaml": "error seed.Vendor[0].big_credit: does not fit numeric(12, 2): at most 10 digits before the decimal point",
     "seedint32.yaml": "error seed.Vendor[0].rank: must be between -2147483648 and 2147483647 (Postgres integer)",
