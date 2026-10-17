@@ -1,0 +1,336 @@
+import type { Blueprint as RawBlueprint } from "./schema.js";
+import { crudActions } from "./schema.js";
+
+export interface Issue {
+  path: string;
+  message: string;
+}
+
+function check(bp: RawBlueprint): { errors: Issue[]; warnings: Issue[] } {
+  const errors: Issue[] = [];
+  const warnings: Issue[] = [];
+  const roles = new Set(bp.roles.map((r) => r.id));
+  const entities = new Map(bp.entities.map((e) => [e.name, e]));
+
+  dupes(bp.roles.map((r) => r.id), "roles", errors);
+  dupes(bp.entities.map((e) => e.name), "entities", errors);
+  if (bp.roles.filter((r) => r.default).length > 1) errors.push({ path: "roles", message: "only one role may be default" });
+
+  bp.entities.forEach((entity, ei) => {
+    const base = `entities[${ei}]`;
+    const fields = new Set(entity.fields.map((f) => f.name));
+    dupes(entity.fields.map((f) => f.name), `${base}.fields`, errors);
+
+    entity.fields.forEach((f, fi) => {
+      const p = `${base}.fields[${fi}]`;
+      if (f.type === "ref" && !entities.has(f.to)) errors.push({ path: `${p}.to`, message: `unknown entity '${f.to}'` });
+      if (f.type === "enum" && f.default !== undefined && !f.values.includes(String(f.default)))
+        errors.push({ path: `${p}.default`, message: `'${f.default}' is not one of the enum values` });
+      if (f.type === "files") warnings.push({ path: p, message: "'files' fields are v1 and ignored by the MVP" });
+      if (f.visible_when) warnings.push({ path: `${p}.visible_when`, message: "conditional visibility is v1 and ignored by the MVP" });
+    });
+
+    const known = new Set([...fields, "created_at", "updated_at", "created_by", ...(entity.workflow ? [entity.workflow.field] : [])]);
+    if (entity.display && !fields.has(entity.display)) errors.push({ path: `${base}.display`, message: `unknown field '${entity.display}'` });
+    const list = entity.list;
+    if (list) {
+      for (const key of ["columns", "filters", "search"] as const)
+        list[key]?.forEach((name, i) => {
+          if (!known.has(name)) errors.push({ path: `${base}.list.${key}[${i}]`, message: `unknown field '${name}'` });
+        });
+      if (list.default_sort && !known.has(list.default_sort.field))
+        errors.push({ path: `${base}.list.default_sort.field`, message: `unknown field '${list.default_sort.field}'` });
+    }
+
+    const wf = entity.workflow;
+    if (!wf) return;
+    const wp = `${base}.workflow`;
+    if (fields.has(wf.field)) errors.push({ path: `${wp}.field`, message: `'${wf.field}' clashes with a declared field` });
+    const states = new Set(wf.states.map((s) => s.id));
+    dupes(wf.states.map((s) => s.id), `${wp}.states`, errors);
+    dupes(wf.transitions.map((t) => t.id), `${wp}.transitions`, errors);
+    if (!states.has(wf.initial)) errors.push({ path: `${wp}.initial`, message: `unknown state '${wf.initial}'` });
+    const finals = new Set(wf.states.filter((s) => s.final).map((s) => s.id));
+
+    wf.transitions.forEach((t, ti) => {
+      const tp = `${wp}.transitions[${ti}]`;
+      for (const end of ["from", "to"] as const)
+        if (!states.has(t[end])) errors.push({ path: `${tp}.${end}`, message: `unknown state '${t[end]}'` });
+      if (finals.has(t.from)) errors.push({ path: `${tp}.from`, message: `'${t.from}' is final and cannot have outgoing transitions` });
+      t.roles.forEach((r, ri) => {
+        if (!roles.has(r)) errors.push({ path: `${tp}.roles[${ri}]`, message: `unknown role '${r}'` });
+      });
+      t.require_fields?.forEach((name, i) => {
+        if (!fields.has(name)) errors.push({ path: `${tp}.require_fields[${i}]`, message: `unknown field '${name}'` });
+      });
+      if (t.only_owner && !entity.ownership) errors.push({ path: `${tp}.only_owner`, message: "requires entity ownership" });
+      if (t.when) warnings.push({ path: `${tp}.when`, message: "field guards are v1 and ignored by the MVP" });
+    });
+
+    const reachable = new Set([wf.initial]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const t of wf.transitions)
+        if (reachable.has(t.from) && !reachable.has(t.to)) {
+          reachable.add(t.to);
+          grew = true;
+        }
+    }
+    for (const s of states)
+      if (!reachable.has(s)) errors.push({ path: `${wp}.states`, message: `state '${s}' is unreachable from '${wf.initial}'` });
+    for (const s of wf.states)
+      if (!s.final && !wf.transitions.some((t) => t.from === s.id))
+        errors.push({ path: `${wp}.states`, message: `state '${s.id}' has no outgoing transitions and is not final` });
+    if (wf.notify) warnings.push({ path: `${wp}.notify`, message: "notifications are v1 and ignored by the MVP" });
+  });
+
+  for (const [entityName, byRole] of Object.entries(bp.permissions)) {
+    const entity = entities.get(entityName);
+    const pp = `permissions.${entityName}`;
+    if (!entity) {
+      errors.push({ path: pp, message: `unknown entity '${entityName}'` });
+      continue;
+    }
+    const states = new Set(entity.workflow?.states.map((s) => s.id) ?? []);
+    for (const [role, rule] of Object.entries(byRole)) {
+      if (!roles.has(role)) errors.push({ path: `${pp}.${role}`, message: `unknown role '${role}'` });
+      if (Array.isArray(rule)) continue;
+      for (const [action, r] of Object.entries(rule)) {
+        const usesOwn = r === "own" || (typeof r === "object" && r.own);
+        if (usesOwn && !entity.ownership)
+          errors.push({ path: `${pp}.${role}.${action}`, message: "'own' requires entity ownership" });
+        if (typeof r === "object")
+          r.in_states?.forEach((s) => {
+            if (!states.has(s)) errors.push({ path: `${pp}.${role}.${action}.in_states`, message: `unknown state '${s}'` });
+          });
+      }
+    }
+  }
+
+  bp.pages?.forEach((p, i) => {
+    if (!entities.has(p.entity)) errors.push({ path: `pages[${i}].entity`, message: `unknown entity '${p.entity}'` });
+  });
+  if (bp.auth.federation) warnings.push({ path: "auth.federation", message: "SSO federation is v1 and ignored by the MVP" });
+  for (const name of Object.keys(bp.environments))
+    if (name !== "dev" && name !== "prod") warnings.push({ path: `environments.${name}`, message: "only dev and prod are supported by the MVP" });
+
+  return { errors, warnings };
+}
+
+function dupes(values: string[], path: string, errors: Issue[]) {
+  const seen = new Set<string>();
+  for (const v of values) {
+    if (seen.has(v)) errors.push({ path, message: `duplicate '${v}'` });
+    seen.add(v);
+  }
+}
+
+declare const brand: unique symbol;
+type Brand<T, B extends string> = T & { readonly [brand]: B };
+export type RoleId = Brand<string, "RoleId">;
+export type EntityName = Brand<string, "EntityName">;
+export type FieldName = Brand<string, "FieldName">;
+export type StateId = Brand<string, "StateId">;
+export type TransitionId = Brand<string, "TransitionId">;
+export type NonEmpty<T> = readonly [T, ...T[]];
+export type CrudAction = (typeof crudActions)[number];
+
+export type ScalarType = "string" | "text" | "int" | "decimal" | "bool" | "date" | "datetime" | "email";
+export type ScalarConstraints = {
+  min?: number;
+  max?: number;
+  pattern?: string;
+  precision?: number;
+  scale?: number;
+  default?: string | number | boolean;
+};
+
+export type Field =
+  | { kind: "scalar"; name: FieldName; label: string; type: ScalarType; required: boolean; unique: boolean; constraints: ScalarConstraints }
+  | { kind: "enum"; name: FieldName; label: string; values: NonEmpty<string>; default?: string; required: boolean }
+  | { kind: "ref"; name: FieldName; label: string; target: EntityName; required: boolean };
+
+export type Ownership = { kind: "none" } | { kind: "created_by" };
+
+export type Transition = {
+  id: TransitionId;
+  from: StateId;
+  to: StateId;
+  roles: NonEmpty<RoleId>;
+  ownerOnly: boolean;
+  requireFields: readonly FieldName[];
+};
+
+export type Workflow = {
+  field: FieldName;
+  initial: StateId;
+  states: ReadonlyMap<StateId, { label: string; final: boolean }>;
+  transitions: ReadonlyMap<TransitionId, Transition>;
+  separationOfDuties: boolean;
+};
+
+export type Entity = {
+  name: EntityName;
+  label: string;
+  fields: ReadonlyMap<FieldName, Field>;
+  display: FieldName;
+  ownership: Ownership;
+  workflow?: Workflow;
+};
+
+export type Grant =
+  | { kind: "deny" }
+  | { kind: "all"; inStates?: NonEmpty<StateId> }
+  | { kind: "own"; inStates?: NonEmpty<StateId> };
+
+export type Permissions = ReadonlyMap<EntityName, ReadonlyMap<RoleId, Record<CrudAction, Grant>>>;
+
+export type SeedUser = { email: string; roles: NonEmpty<RoleId> };
+
+export type Env = { account: string; region: string; seedUsers: boolean };
+
+export type Model = {
+  app: { name: string; title: string; locale: string };
+  roles: ReadonlyMap<RoleId, { description: string; isDefault: boolean }>;
+  entities: ReadonlyMap<EntityName, Entity>;
+  permissions: Permissions;
+  audit: { enabled: boolean };
+  seed: { rows: ReadonlyMap<EntityName, readonly Readonly<Record<string, unknown>>[]>; users: readonly SeedUser[] };
+  environments: { dev: Env; prod?: Env };
+};
+
+export type ParseResult =
+  | { ok: true; model: Model; warnings: Issue[] }
+  | { ok: false; errors: Issue[]; warnings: Issue[] };
+
+export function parse(raw: RawBlueprint): ParseResult {
+  const { errors, warnings } = check(raw);
+  checkSeed(raw, errors);
+  if (errors.length) return { ok: false, errors, warnings };
+  return { ok: true, model: build(raw), warnings };
+}
+
+function checkSeed(bp: RawBlueprint, errors: Issue[]) {
+  const roles = new Set(bp.roles.map((r) => r.id));
+  for (const [key, rows] of Object.entries(bp.seed ?? {})) {
+    if (key === "users") {
+      rows.forEach((u, i) => {
+        if (typeof u.email !== "string") errors.push({ path: `seed.users[${i}].email`, message: "must be a string" });
+        const rs = u.roles;
+        if (!Array.isArray(rs) || rs.length === 0) errors.push({ path: `seed.users[${i}].roles`, message: "must be a non-empty list of roles" });
+        else rs.forEach((r, ri) => {
+          if (!roles.has(String(r))) errors.push({ path: `seed.users[${i}].roles[${ri}]`, message: `unknown role '${String(r)}'` });
+        });
+      });
+      continue;
+    }
+    const entity = bp.entities.find((e) => e.name === key);
+    if (!entity) {
+      errors.push({ path: `seed.${key}`, message: `unknown entity '${key}'` });
+      continue;
+    }
+    const names = new Set(entity.fields.map((f) => f.name));
+    rows.forEach((row, i) => {
+      for (const k of Object.keys(row))
+        if (!names.has(k)) errors.push({ path: `seed.${key}[${i}].${k}`, message: `unknown field '${k}'` });
+    });
+  }
+}
+
+const nonEmpty = <T>(xs: readonly T[]): NonEmpty<T> => xs as unknown as NonEmpty<T>;
+
+function build(bp: RawBlueprint): Model {
+  const entities = new Map<EntityName, Entity>();
+  for (const e of bp.entities) {
+    const fields = new Map<FieldName, Field>();
+    for (const f of e.fields) {
+      const name = f.name as FieldName;
+      const label = f.label ?? f.name;
+      const required = f.required ?? false;
+      if (f.type === "files") continue;
+      if (f.type === "enum")
+        fields.set(name, { kind: "enum", name, label, values: nonEmpty(f.values), default: f.default === undefined ? undefined : String(f.default), required });
+      else if (f.type === "ref") fields.set(name, { kind: "ref", name, label, target: f.to as EntityName, required });
+      else
+        fields.set(name, {
+          kind: "scalar",
+          name,
+          label,
+          type: f.type,
+          required,
+          unique: f.unique ?? false,
+          constraints: { min: f.min, max: f.max, pattern: f.pattern, precision: f.precision, scale: f.scale, default: f.default },
+        });
+    }
+    const wf = e.workflow;
+    const workflow: Workflow | undefined = wf && {
+      field: wf.field as FieldName,
+      initial: wf.initial as StateId,
+      states: new Map(wf.states.map((s) => [s.id as StateId, { label: s.label ?? s.id, final: s.final ?? false }])),
+      transitions: new Map(
+        wf.transitions
+          .filter((t) => !t.when)
+          .map((t) => [
+            t.id as TransitionId,
+            {
+              id: t.id as TransitionId,
+              from: t.from as StateId,
+              to: t.to as StateId,
+              roles: nonEmpty(t.roles as RoleId[]),
+              ownerOnly: t.only_owner ?? false,
+              requireFields: (t.require_fields ?? []) as FieldName[],
+            },
+          ]),
+      ),
+      separationOfDuties: wf.separation_of_duties ?? false,
+    };
+    entities.set(e.name as EntityName, {
+      name: e.name as EntityName,
+      label: e.label ?? e.name,
+      fields,
+      display: (e.display ?? e.fields[0].name) as FieldName,
+      ownership: e.ownership ? { kind: "created_by" } : { kind: "none" },
+      workflow,
+    });
+  }
+
+  const permissions = new Map<EntityName, Map<RoleId, Record<CrudAction, Grant>>>();
+  for (const [entityName, byRole] of Object.entries(bp.permissions)) {
+    const roles = new Map<RoleId, Record<CrudAction, Grant>>();
+    for (const [role, rule] of Object.entries(byRole)) {
+      const grants = Object.fromEntries(crudActions.map((a) => [a, { kind: "deny" }])) as Record<CrudAction, Grant>;
+      if (Array.isArray(rule)) for (const a of rule) grants[a] = { kind: "all" };
+      else
+        for (const a of crudActions) {
+          const r = rule[a];
+          if (r === undefined || r === false) continue;
+          if (r === true || r === "all") grants[a] = { kind: "all" };
+          else if (r === "own") grants[a] = { kind: "own" };
+          else {
+            const inStates = r.in_states?.length ? nonEmpty(r.in_states as StateId[]) : undefined;
+            grants[a] = r.own ? { kind: "own", inStates } : { kind: "all", inStates };
+          }
+        }
+      roles.set(role as RoleId, grants);
+    }
+    permissions.set(entityName as EntityName, roles);
+  }
+
+  const env = (name: string): Env | undefined => {
+    const e = bp.environments[name];
+    return e && { account: e.account, region: e.region, seedUsers: e.seed_users ?? false };
+  };
+  const { users = [], ...rows } = bp.seed ?? {};
+  return {
+    app: { name: bp.app.name, title: bp.app.title, locale: bp.app.locale ?? "en" },
+    roles: new Map(bp.roles.map((r) => [r.id as RoleId, { description: r.description ?? "", isDefault: r.default ?? false }])),
+    entities,
+    permissions,
+    audit: { enabled: bp.audit?.enabled ?? false },
+    seed: {
+      rows: new Map(Object.entries(rows).map(([k, v]) => [k as EntityName, v])),
+      users: users.map((u) => ({ email: String(u.email), roles: nonEmpty((u.roles as string[]).map((r) => r as RoleId)) })),
+    },
+    environments: { dev: env("dev") as Env, prod: env("prod") },
+  };
+}

@@ -1,13 +1,13 @@
 import { parse, YAMLParseError } from "yaml";
 import type { ZodIssue } from "zod";
 import { Blueprint } from "./schema.js";
-import { checkSemantics, type Issue } from "./semantic.js";
+import { parse as parseModel, type Issue, type Model } from "./model.js";
 
 export { Blueprint, Field } from "./schema.js";
-export { checkSemantics, type Issue } from "./semantic.js";
+export * from "./model.js";
 
 export type ValidationResult =
-  | { ok: true; blueprint: Blueprint; warnings: Issue[] }
+  | { ok: true; model: Model; warnings: Issue[] }
   | { ok: false; errors: Issue[]; warnings: Issue[] };
 
 export function validateBlueprint(input: unknown): ValidationResult {
@@ -16,8 +16,7 @@ export function validateBlueprint(input: unknown): ValidationResult {
     const errors = parsed.error.issues.flatMap(closestIssues).map((i) => ({ path: i.path.join(".") || "(root)", message: i.message }));
     return { ok: false, errors, warnings: [] };
   }
-  const { errors, warnings } = checkSemantics(parsed.data);
-  return errors.length ? { ok: false, errors, warnings } : { ok: true, blueprint: parsed.data, warnings };
+  return parseModel(parsed.data);
 }
 
 export function validateBlueprintYaml(source: string): ValidationResult {
