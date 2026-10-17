@@ -8,13 +8,41 @@ export function snake(name: string): string {
   return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/([A-Z])([A-Z][a-z])/g, "$1_$2").toLowerCase();
 }
 
+const irregular: Readonly<Record<string, string>> = {
+  person: "people",
+  child: "children",
+  man: "men",
+  woman: "women",
+  mouse: "mice",
+  goose: "geese",
+  tooth: "teeth",
+  foot: "feet",
+  datum: "data",
+  index: "indices",
+  matrix: "matrices",
+  vertex: "vertices",
+};
+const pluralForms = new Set(Object.values(irregular));
+const uncountable = new Set(["data", "equipment", "information", "metadata", "news", "series", "species", "staff"]);
+
 export function plural(word: string): string {
-  if (/[^aeiou]y$/.test(word)) return word.slice(0, -1) + "ies";
-  if (/(s|x|z|ch|sh)$/.test(word)) return word + "es";
-  return word + "s";
+  const parts = word.split("_");
+  const last = parts.pop()!;
+  return [...parts, pluralWord(last)].join("_");
 }
 
-export const tableName = (entity: string) => plural(snake(entity));
+function pluralWord(w: string): string {
+  if (irregular[w]) return irregular[w];
+  if (pluralForms.has(w) || uncountable.has(w)) return w;
+  if (/(ses|xes|zes|ches|shes|ies)$/.test(w)) return w;
+  if (/[^aeiou]y$/.test(w)) return w.slice(0, -1) + "ies";
+  if (/(ss|us|x|z|ch|sh)$/.test(w)) return w + "es";
+  if (/is$/.test(w)) return w.slice(0, -2) + "es";
+  if (/s$/.test(w)) return w;
+  return w + "s";
+}
+
+export const tableName = (entity: string, override?: string) => override ?? plural(snake(entity));
 
 export function sqlIdentifierProblem(name: string): string | undefined {
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) return `'${name}' must be lowercase snake_case to be a SQL identifier`;

@@ -221,10 +221,11 @@ function checkNames(bp: RawBlueprint, errors: Issue[]) {
   const owners = new Map<string, string>();
   bp.entities.forEach((e, ei) => {
     const path = `entities[${ei}].name`;
-    const table = tableName(e.name);
+    const table = tableName(e.name, e.table);
+    const tpath = e.table ? `entities[${ei}].table` : path;
     const tableProblem = sqlIdentifierProblem(table);
-    if (tableProblem) errors.push({ path, message: `table name ${tableProblem}` });
-    if (systemTables.has(table)) errors.push({ path, message: `entity '${e.name}' maps to table '${table}', which is reserved for owninfra` });
+    if (tableProblem) errors.push({ path: tpath, message: `table name ${tableProblem}` });
+    if (systemTables.has(table)) errors.push({ path: tpath, message: `entity '${e.name}' maps to table '${table}', which is reserved for owninfra` });
     const clash = owners.get(table);
     if (clash && clash !== e.name) errors.push({ path, message: `entities '${clash}' and '${e.name}' both map to table '${table}'` });
     owners.set(table, e.name);
@@ -236,14 +237,55 @@ function checkNames(bp: RawBlueprint, errors: Issue[]) {
       if (isSystemColumn(c)) errors.push({ path: cpath, message: `'${c}' is a system column` });
       const problem = sqlIdentifierProblem(c);
       if (problem) errors.push({ path: cpath, message: `column name ${problem}` });
-      else if (!tableProblem && Buffer.byteLength(`${table}_${c}_fkey`) > maxIdentifier) tooLong.push(c);
+      else if (!tableProblem && Buffer.byteLength(`${table}_${c}_fkey`) > maxIdentifier) {
+        if (Buffer.byteLength(c) > Buffer.byteLength(table))
+          errors.push({ path: cpath, message: `column name '${c}' makes the constraint name '${table}_${c}_fkey' longer than ${maxIdentifier} bytes; shorten the field name` });
+        else tooLong.push(c);
+      }
     });
     if (tooLong.length)
       errors.push({
-        path,
+        path: tpath,
         message: `table name '${table}' is too long for Postgres constraint names on ${tooLong.map((c) => `'${c}'`).join(", ")} (limit ${maxIdentifier} bytes for '<table>_<column>_fkey'); shorten the entity name`,
       });
   });
+}
+
+function seedValueProblem(f: RawBlueprint["entities"][number]["fields"][number], v: unknown): string | undefined {
+  if (v === null) return f.required ? "is required and cannot be null" : undefined;
+  switch (f.type) {
+    case "bool":
+      return typeof v === "boolean" ? undefined : "must be a boolean";
+    case "int":
+      return Number.isInteger(v) ? range(f, v as number) : "must be an integer";
+    case "decimal": {
+      const n = typeof v === "number" ? v : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN;
+      return Number.isNaN(n) ? "must be a number" : range(f, n);
+    }
+    case "date":
+      return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? undefined : "must be a date (YYYY-MM-DD)";
+    case "datetime":
+      return typeof v === "string" && !Number.isNaN(Date.parse(v)) ? undefined : "must be an ISO date-time";
+    case "enum":
+      return f.values.includes(String(v)) ? undefined : `must be one of ${f.values.join(", ")}`;
+    case "files":
+      return "files cannot be seeded";
+    case "ref":
+      return undefined;
+    default: {
+      if (typeof v !== "string") return "must be a string";
+      if (f.type === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return "must be an email address";
+      if (f.max !== undefined && v.length > f.max) return `must be at most ${f.max} characters`;
+      if (f.pattern !== undefined && !new RegExp(f.pattern).test(v)) return `must match ${f.pattern}`;
+      return undefined;
+    }
+  }
+}
+
+function range(f: { min?: number; max?: number }, n: number): string | undefined {
+  if (f.min !== undefined && n < f.min) return `must be at least ${f.min}`;
+  if (f.max !== undefined && n > f.max) return `must be at most ${f.max}`;
+  return undefined;
 }
 
 function checkSeed(bp: RawBlueprint, errors: Issue[]) {
@@ -268,11 +310,18 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]) {
     const names = new Set(entity.fields.map((f) => f.name));
     const refs = new Map(entity.fields.flatMap((f) => (f.type === "ref" ? [[f.name, f.to] as const] : [])));
     rows.forEach((row, i) => {
+      for (const f of entity.fields)
+        if (f.required && f.default === undefined && f.type !== "files" && row[f.name] === undefined)
+          errors.push({ path: `seed.${key}[${i}]`, message: `missing required field '${f.name}'` });
       for (const k of Object.keys(row)) {
         const p = `seed.${key}[${i}].${k}`;
         if (!names.has(k)) errors.push({ path: p, message: `unknown field '${k}'` });
         else if (refs.has(k))
           errors.push({ path: p, message: `seed rows cannot set ref field '${k}' (to ${refs.get(k)}): seeded rows get generated ids, so references between seeds are not supported yet` });
+        else {
+          const problem = seedValueProblem(entity.fields.find((f) => f.name === k)!, row[k]);
+          if (problem) errors.push({ path: p, message: problem });
+        }
       }
     });
   }
@@ -327,7 +376,7 @@ function build(bp: RawBlueprint): Model {
     };
     entities.set(e.name as EntityName, {
       name: e.name as EntityName,
-      table: tableName(e.name) as TableName,
+      table: tableName(e.name, e.table) as TableName,
       label: e.label ?? e.name,
       fields,
       display: (e.display ?? e.fields[0].name) as FieldName,

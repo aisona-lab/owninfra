@@ -50,17 +50,38 @@ describe("parse into Model", () => {
 });
 
 describe("naming", () => {
-  it("derives snake_case plural table names", async () => {
+  it("derives snake_case plural table names from rules and irregulars", async () => {
     const { tableName } = await import("../src/index.js");
-    expect(["PurchaseRequest", "Category", "Address", "Box", "Day", "HTTPLog"].map(tableName)).toEqual([
-      "purchase_requests",
-      "categories",
-      "addresses",
-      "boxes",
-      "days",
-      "http_logs",
-    ]);
+    const cases: Record<string, string> = {
+      PurchaseRequest: "purchase_requests",
+      Category: "categories",
+      Address: "addresses",
+      Box: "boxes",
+      Day: "days",
+      HTTPLog: "http_logs",
+      Account: "accounts",
+      Accounts: "accounts",
+      Status: "statuses",
+      Statuses: "statuses",
+      Person: "people",
+      People: "people",
+      SalesPerson: "sales_people",
+      Child: "children",
+      Analysis: "analyses",
+      Equipment: "equipment",
+    };
+    expect(Object.fromEntries(Object.keys(cases).map((k) => [k, tableName(k)]))).toEqual(cases);
     expect(model().entities.get("PurchaseRequest" as EntityName)!.table).toBe("purchase_requests");
+  });
+
+  it("uses an explicit table override", () => {
+    const bp = parse(source);
+    bp.entities[1].table = "suppliers";
+    const r = validateBlueprint(bp);
+    if (!r.ok) throw new Error(JSON.stringify(r.errors));
+    expect(r.model.entities.get("Vendor" as EntityName)!.table).toBe("suppliers");
+    bp.entities[1].table = "order";
+    expect(validateBlueprint(bp)).toMatchObject({ ok: false, errors: [{ path: "entities[1].table", message: "table name 'order' is a reserved word in Postgres" }] });
   });
 
   it("NFC-normalizes labels so composed and decomposed input match", () => {

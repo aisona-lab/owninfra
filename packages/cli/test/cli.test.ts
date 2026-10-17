@@ -78,6 +78,10 @@ describe("cli", () => {
     "tableaudit.yaml": "error entities[1].name: entity 'AuditEvent' maps to table 'audit_events', which is reserved for owninfra",
     "seedref.yaml": "error seed.PurchaseRequest[0].department: seed rows cannot set ref field 'department' (to Department): seeded rows get generated ids, so references between seeds are not supported yet",
     "longfk.yaml": "error entities[2].name: table name 'purchase_request_for_extremely_long_departmental_procuremes' is too long for Postgres constraint names on 'title', 'description', 'amount', 'currency', 'department', 'vendor', 'needed_by', 'justification', 'rejection_reason', 'status' (limit 63 bytes for '<table>_<column>_fkey'); shorten the entity name",
+    "seedtype.yaml": "error seed.Vendor[0].active: must be a boolean",
+    "seedrequired.yaml": "error seed.Vendor[0]: missing required field 'tax_id'",
+    "seedpattern.yaml": "error seed.Department[1].code: must match ^[A-Z]{2,6}$",
+    "longfield.yaml": "error entities[2].fields[6].name: column name 'fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff' makes the constraint name 'purchase_requests_fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_fkey' longer than 63 bytes; shorten the field name",
     "unreach.yaml": "error entities[2].workflow.states: state 'archived' is unreachable from 'draft'",
   };
 
