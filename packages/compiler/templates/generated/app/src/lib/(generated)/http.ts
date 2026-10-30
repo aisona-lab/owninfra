@@ -1,4 +1,4 @@
-import { HttpError } from "./errors";
+import { HttpError, Unavailable } from "./errors";
 import { requireUser } from "./session";
 import type { User } from "./types";
 
@@ -7,7 +7,11 @@ export async function handle(fn: (user: User) => Promise<unknown>, status = 200)
     const body = await fn(await requireUser());
     return body === undefined ? new Response(null, { status: 204 }) : Response.json(body, { status });
   } catch (e) {
-    if (e instanceof HttpError) return Response.json(e.fields ? { error: e.message, fields: e.fields } : { error: e.message }, { status: e.status });
+    if (e instanceof HttpError)
+      return Response.json(e.fields ? { error: e.message, fields: e.fields } : { error: e.message }, {
+        status: e.status,
+        headers: e instanceof Unavailable && e.retryAfter ? { "retry-after": String(e.retryAfter) } : undefined,
+      });
     throw e;
   }
 }

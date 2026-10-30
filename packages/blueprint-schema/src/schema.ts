@@ -93,12 +93,15 @@ const RolePermission = z.union(
   { errorMap: () => ({ message: "must be a list of actions (create, read, update, delete) or a map of action to rule" }) },
 );
 
+/** compute.max caps the app function's concurrent instances (Lambda reserved concurrency); 0 would throttle every request. */
+const maxInstances = "must be a whole number, 1 or more";
+
 const Environment = z
   .object({
     account: z.string().regex(/^\d{12}$/, "must be a 12-digit AWS account id"),
     region: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/, "must be an AWS region"),
     compute: z
-      .object({ cpu: z.number().int(), memory: z.number().int(), desired: z.number().int(), max: z.number().int() })
+      .object({ cpu: z.number().int(), memory: z.number().int(), desired: z.number().int(), max: z.number().int(maxInstances).min(1, maxInstances) })
       .strict()
       .optional(),
     database: z

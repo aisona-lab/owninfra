@@ -6,6 +6,7 @@ import { EntityForm, type Option } from "@/lib/(generated)/forms";
 import { authorize, createColumns, entityByTable } from "@/lib/(generated)/guard";
 import { list, refLabels } from "@/lib/(generated)/repository";
 import { currentUser } from "@/lib/(generated)/session";
+import { unlessUnavailable } from "@/lib/(generated)/errors";
 
 export default async function ListPage({ params }: { params: Promise<{ entity: string }> }) {
   const { entity: table } = await params;
@@ -13,7 +14,7 @@ export default async function ListPage({ params }: { params: Promise<{ entity: s
   if (!entity) notFound();
   const user = await currentUser();
   if (!user) redirect("/api/auth/signin");
-  const [rows, labels] = await Promise.all([list(user, table).catch(() => []), refLabels(user, entity)]);
+  const [rows, labels] = await Promise.all([list(user, table).catch(unlessUnavailable([])), refLabels(user, entity)]);
   const options: Record<string, Option[]> = Object.fromEntries(
     Object.entries(labels).map(([k, m]) => [
       k,

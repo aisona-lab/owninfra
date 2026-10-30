@@ -1,4 +1,4 @@
-import { App, Aspects, Aws, Duration, type IAspect, Stack, Tags, Validations } from "aws-cdk-lib";
+import { App, Aspects, Aws, CfnOutput, Duration, type IAspect, Stack, Tags, Validations } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -41,8 +41,12 @@ function mfaNotRequiredReason(mfa: Model["auth"]["mfa"]): string {
   return "The blueprint leaves auth.mfa unset and the schema has no default, so MfaConfiguration is OFF (Cognito's default). auth.mfa: required sets it to ON and removes this acknowledgement.";
 }
 
+/** Lambda instances the public URL may run at once when the blueprint sets no compute.max: enough for a few users, small enough to bound cost and load on a 2 ACU database. */
+export const defaultConcurrency = 5;
+const clientName = "web";
+
 export const unrotatedSecretReason =
-  "No rotation schedule. Rotating this CDK-generated secret needs a rotation Lambda that reaches both the database and Secrets Manager; the cluster is in isolated subnets with no NAT or Secrets Manager interface endpoint (both bill hourly), so such a Lambda has no path. RDS-managed master password rotation (ManageMasterUserPassword) needs no Lambda, but the AWS docs do not say whether the Data API accepts an RDS-managed secret (unconfirmed), and the app does not use the Data API yet (it still connects with postgres.js over TCP), so the secret has not been switched.";
+  "No rotation schedule. Rotating this CDK-generated secret needs a rotation Lambda that reaches both the database and Secrets Manager; the cluster is in isolated subnets with no NAT or Secrets Manager interface endpoint (both bill hourly), so such a Lambda has no path. RDS-managed master password rotation (ManageMasterUserPassword) needs no Lambda, but the AWS docs do not say whether the Data API accepts an RDS-managed secret (unconfirmed), and the deployed app reaches the database only through the Data API with this secret, so the secret has not been switched.";
 
 /** Acknowledges AwsSolutions-SMG4 only on secrets that no rotation schedule targets, so adding rotation removes the acknowledgement. */
 class AcknowledgeUnrotatedSecrets implements IAspect {
@@ -71,6 +75,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     },
   });
 
+  const databaseName = model.app.name.replaceAll("-", "_");
   const db = new rds.DatabaseCluster(stack, "Db", {
     engine: rds.DatabaseClusterEngine.auroraPostgres({ version: rds.AuroraPostgresEngineVersion.VER_16_11 }),
     writer: rds.ClusterInstance.serverlessV2("Writer"),
@@ -79,7 +84,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     serverlessV2MaxCapacity: 2,
     vpc,
     vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    defaultDatabaseName: model.app.name.replaceAll("-", "_"),
+    defaultDatabaseName: databaseName,
     storageEncrypted: true,
     enableDataApi: true,
     iamAuthentication: true,
@@ -109,13 +114,17 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     code: lambda.Code.fromCfnParameters(),
     memorySize: 1024,
     timeout: Duration.seconds(30),
+    reservedConcurrentExecutions: env.maxInstances ?? defaultConcurrency,
     role,
     logGroup,
     environment: {
       NODE_ENV: "production",
       DATABASE_CLUSTER_ARN: db.clusterArn,
       DATABASE_SECRET_ARN: db.secret!.secretArn,
+      DATABASE_NAME: databaseName,
       AUTH_COGNITO_ISSUER: `https://cognito-idp.${env.region}.amazonaws.com/${userPool.userPoolId}`,
+      USER_POOL_ID: userPool.userPoolId,
+      USER_POOL_CLIENT_NAME: clientName,
     },
   });
   fn.addToRolePolicy(
@@ -125,9 +134,15 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     }),
   );
   fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["secretsmanager:GetSecretValue"], resources: [db.secret!.secretArn] }));
+  // The client's callback URL needs the function URL, so the function can't also take the client id (or secret) as env:
+  // that is a cycle. The app reads both from Cognito at startup instead; Cognito scopes these actions to the pool.
+  fn.addToRolePolicy(
+    new iam.PolicyStatement({ actions: ["cognito-idp:ListUserPoolClients", "cognito-idp:DescribeUserPoolClient"], resources: [userPool.userPoolArn] }),
+  );
   const url = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
 
-  userPool.addClient("Web", {
+  const client = userPool.addClient("Web", {
+    userPoolClientName: clientName,
     generateSecret: true,
     oAuth: {
       flows: { authorizationCodeGrant: true },
@@ -136,6 +151,9 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     },
   });
 
+  new CfnOutput(stack, "FunctionUrl", { value: url.url });
+  new CfnOutput(stack, "UserPoolId", { value: userPool.userPoolId });
+  new CfnOutput(stack, "UserPoolClientId", { value: client.userPoolClientId });
   return stack;
 }
 

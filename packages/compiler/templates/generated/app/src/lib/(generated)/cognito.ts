@@ -1,0 +1,36 @@
+import { CognitoIdentityProviderClient, DescribeUserPoolClientCommand, ListUserPoolClientsCommand } from "@aws-sdk/client-cognito-identity-provider";
+import { hkdfSync } from "node:crypto";
+
+type Client = Pick<CognitoIdentityProviderClient, "send">;
+export type WebClient = { clientId: string; clientSecret: string; authSecret: string };
+
+/**
+ * Reads the app's Cognito client at startup. The stack can't pass its id or secret as env (see the constructs
+ * package), and this keeps the secret out of the template, the env and the outputs. The Auth.js cookie secret is
+ * derived from the client secret, so there is no second secret to store or rotate.
+ */
+export async function webClient(userPoolId: string, name: string, client: Client = new CognitoIdentityProviderClient({})): Promise<WebClient> {
+  const ids: string[] = [];
+  let NextToken: string | undefined;
+  do {
+    const page = await client.send(new ListUserPoolClientsCommand({ UserPoolId: userPoolId, MaxResults: 60, NextToken }));
+    for (const c of page.UserPoolClients ?? []) if (c.ClientName === name && c.ClientId) ids.push(c.ClientId);
+    NextToken = page.NextToken;
+  } while (NextToken);
+  if (ids.length !== 1) throw new Error(`expected one Cognito client named '${name}' in ${userPoolId}, found ${ids.length}`);
+  const { UserPoolClient } = await client.send(new DescribeUserPoolClientCommand({ UserPoolId: userPoolId, ClientId: ids[0] }));
+  const clientSecret = UserPoolClient?.ClientSecret;
+  if (!clientSecret) throw new Error(`Cognito client '${name}' has no secret`);
+  const authSecret = Buffer.from(hkdfSync("sha256", clientSecret, "", "owninfra auth.js secret", 32)).toString("base64url");
+  return { clientId: ids[0], clientSecret, authSecret };
+}
+
+let cached: Promise<WebClient> | undefined;
+
+export function cachedWebClient(userPoolId: string, name: string): Promise<WebClient> {
+  cached ??= webClient(userPoolId, name).catch((e: unknown) => {
+    cached = undefined;
+    throw e;
+  });
+  return cached;
+}

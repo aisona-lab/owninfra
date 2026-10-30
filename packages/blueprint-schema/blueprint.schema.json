@@ -739,7 +739,8 @@
                     "type": "integer"
                   },
                   "max": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": [

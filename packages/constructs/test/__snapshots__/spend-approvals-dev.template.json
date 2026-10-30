@@ -522,6 +522,7 @@
       ]
      }
     ],
+    "ClientName": "web",
     "GenerateSecret": true,
     "SupportedIdentityProviders": [
      "COGNITO"
@@ -656,6 +657,19 @@
        "Resource": {
         "Ref": "DbSecretAttachment7AED447C"
        }
+      },
+      {
+       "Action": [
+        "cognito-idp:ListUserPoolClients",
+        "cognito-idp:DescribeUserPoolClient"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "Users0A0EEA89",
+         "Arn"
+        ]
+       }
       }
      ],
      "Version": "2012-10-17"
@@ -704,6 +718,7 @@
       "DATABASE_SECRET_ARN": {
        "Ref": "DbSecretAttachment7AED447C"
       },
+      "DATABASE_NAME": "spend_approvals",
       "AUTH_COGNITO_ISSUER": {
        "Fn::Join": [
         "",
@@ -714,7 +729,11 @@
          }
         ]
        ]
-      }
+      },
+      "USER_POOL_ID": {
+       "Ref": "Users0A0EEA89"
+      },
+      "USER_POOL_CLIENT_NAME": "web"
      }
     },
     "Handler": "index.handler",
@@ -724,6 +743,7 @@
      }
     },
     "MemorySize": 1024,
+    "ReservedConcurrentExecutions": 2,
     "Role": {
      "Fn::GetAtt": [
       "AppRoleDC883459",
@@ -796,6 +816,26 @@
    "Type": "AWS::SSM::Parameter::Value<String>",
    "Default": "/cdk-bootstrap/hnb659fds/version",
    "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Outputs": {
+  "FunctionUrl": {
+   "Value": {
+    "Fn::GetAtt": [
+     "AppFunctionUrl903A073C",
+     "FunctionUrl"
+    ]
+   }
+  },
+  "UserPoolId": {
+   "Value": {
+    "Ref": "Users0A0EEA89"
+   }
+  },
+  "UserPoolClientId": {
+   "Value": {
+    "Ref": "UsersWebA39D1A70"
+   }
   }
  },
  "Rules": {

@@ -5,6 +5,7 @@ import { EntityForm } from "@/lib/(generated)/forms";
 import { availableTransitions, entityByTable } from "@/lib/(generated)/guard";
 import { get, refLabels } from "@/lib/(generated)/repository";
 import { currentUser } from "@/lib/(generated)/session";
+import { unlessUnavailable } from "@/lib/(generated)/errors";
 
 export default async function DetailPage({ params }: { params: Promise<{ entity: string; id: string }> }) {
   const { entity: table, id } = await params;
@@ -12,7 +13,7 @@ export default async function DetailPage({ params }: { params: Promise<{ entity:
   if (!entity) notFound();
   const user = await currentUser();
   if (!user) redirect("/api/auth/signin");
-  const row = await get(user, table, id).catch(() => null);
+  const row = await get(user, table, id).catch(unlessUnavailable(null));
   if (!row) notFound();
   const labels = await refLabels(user, entity);
   const items: [string, string][] = [

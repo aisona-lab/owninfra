@@ -46,6 +46,18 @@ describe("validateBlueprint", () => {
     expect(errs).toContain("environments.prod.account: must be a 12-digit AWS account id");
   });
 
+  it.each([0, -1, 1.5])("rejects compute.max %s, naming the field and the allowed range", (max) => {
+    const bp = example();
+    bp.environments.dev.compute.max = max;
+    expect(messages(bp)).toContain("environments.dev.compute.max: must be a whole number, 1 or more");
+  });
+
+  it("accepts compute.max 1", () => {
+    const bp = example();
+    bp.environments.dev.compute.max = 1;
+    expect(messages(bp)).toEqual([]);
+  });
+
   it("detects dangling refs, roles and states", () => {
     const bp = example();
     const pr = bp.entities[2];

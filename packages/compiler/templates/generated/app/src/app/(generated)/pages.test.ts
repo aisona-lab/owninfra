@@ -1,0 +1,74 @@
+import { createElement, type ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Unavailable, startingUp, unknownOutcome } from "@/lib/(generated)/errors";
+import { registry } from "@/lib/(generated)/registry";
+import AuditPage from "./admin/audit/page";
+import DetailPage from "./e/[entity]/[id]/page";
+import ListPage from "./e/[entity]/page";
+import PageError from "./error";
+
+const repo = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), auditLog: vi.fn(), refLabels: vi.fn(), rowLabels: vi.fn() }));
+vi.mock("@/lib/(generated)/repository", () => repo);
+vi.mock("@/lib/(generated)/session", () => ({ currentUser: async () => ({ email: "admin@example.test", roles: ["admin"] }) }));
+vi.mock("@/lib/(generated)/actions", () => ({ createAction: vi.fn(), transitionAction: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  notFound: () => {
+    throw new Error("NEXT_NOT_FOUND");
+  },
+  redirect: () => {
+    throw new Error("NEXT_REDIRECT");
+  },
+}));
+
+const table = registry.entities[0].table;
+const pages = {
+  list: () => ListPage({ params: Promise.resolve({ entity: table }) }),
+  detail: () => DetailPage({ params: Promise.resolve({ entity: table, id: "00000000-0000-0000-0000-000000000000" }) }),
+  audit: () => AuditPage(),
+};
+const reads = { list: repo.list, detail: repo.get, audit: repo.auditLog };
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  repo.refLabels.mockResolvedValue({});
+  repo.rowLabels.mockResolvedValue({});
+});
+
+describe.each(Object.keys(pages) as (keyof typeof pages)[])("the %s page", (page) => {
+  it.each([
+    ["starting up", startingUp],
+    ["lost commit", unknownOutcome],
+  ])("throws a 503 (%s) to the error page instead of rendering a fallback", async (_, message) => {
+    const e = new Unavailable(message, 5);
+    reads[page].mockRejectedValue(e);
+    await expect(pages[page]()).rejects.toBe(e);
+  });
+
+  it("still falls back on other errors", async () => {
+    reads[page].mockRejectedValue(new Error("boom"));
+    const r = await pages[page]().then(
+      () => "rendered",
+      (e: Error) => e.message,
+    );
+    expect(r).toBe(page === "list" ? "rendered" : "NEXT_NOT_FOUND");
+  });
+});
+
+describe("the error page", () => {
+  it("says the app may be starting up and offers a retry", () => {
+    const html = renderToStaticMarkup(createElement(PageError));
+    expect(html).toContain("it is starting up. Try again in a few seconds.");
+    expect(html).toContain('<button type="button">Try again</button>');
+  });
+
+  it("retries by reloading the page", () => {
+    const reload = vi.fn();
+    vi.stubGlobal("location", { reload });
+    const children = (PageError() as ReactElement<{ children: ReactElement<{ type?: string; onClick?: () => void }>[] }>).props.children;
+    const button = children.find((c) => c.type === "button")!;
+    button.props.onClick!();
+    expect(reload).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+});

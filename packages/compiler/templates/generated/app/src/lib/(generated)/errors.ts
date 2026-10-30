@@ -1,9 +1,31 @@
 export class HttpError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 422,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 422 | 503,
     message: string,
     readonly fields?: Record<string, string>,
   ) {
     super(message);
   }
 }
+
+/** The database didn't answer in time, usually because Aurora is resuming from auto-pause. Nothing was written. */
+export const startingUp = "The app is starting up. Try again in a few seconds.";
+/** A commit was sent but no answer came back, so the change may or may not be saved. */
+export const unknownOutcome = "We couldn't confirm whether your change was saved. Reload the page and check before trying again.";
+
+export class Unavailable extends HttpError {
+  constructor(
+    message: string,
+    readonly retryAfter?: number,
+  ) {
+    super(503, message);
+  }
+}
+
+/** For pages that show a fallback when a read fails: still let a 503 through, so the user sees why. */
+export const unlessUnavailable =
+  <T>(fallback: T) =>
+  (e: unknown): T => {
+    if (e instanceof Unavailable) throw e;
+    return fallback;
+  };
