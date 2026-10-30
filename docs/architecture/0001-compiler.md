@@ -11,7 +11,7 @@ Before week 1, `validate` parsed YAML into a Zod-inferred `Blueprint` and ran se
 There are three layers. Each is produced by exactly one function and never mutated afterwards.
 
 1. **`RawBlueprint`** is the Zod output. It mirrors the YAML, including v1 fields. Only `blueprint-schema` sees it.
-2. **`Model`** is the domain model. `parse(raw): Result<Model, Issue[]>` is the only way to build one, so holding a `Model` means L0 passed.
+2. **`Model`** is the domain model. `parse(raw): ParseResult` is the only way to build one (`ParseResult` is `{ ok: true; model; warnings } | { ok: false; errors; warnings }`), so holding a `Model` means L0 passed.
 3. **`Ir`** is the target-shaped description of what to emit. `lower(model): Ir` is total. It cannot fail, because every failure mode was rejected in step 2.
 
 ### Model
@@ -47,6 +47,7 @@ type Workflow = {
 };
 
 type Transition = {
+  id: TransitionId;
   from: StateId;
   to: StateId;
   roles: NonEmpty<RoleId>;
@@ -150,20 +151,20 @@ Templates live in `packages/compiler/templates/`, split into `generated/` and `u
 
 All naming decisions live in `parse`, so `lower` stays total and emitters never rename.
 
-- Table names are the snake_case plural of the entity (`PurchaseRequest` becomes `purchase_requests`, `Category` becomes `categories`). Column names are the field names, which the schema already restricts to lowercase snake case.
+- Table names default to the snake_case plural of the entity (`PurchaseRequest` becomes `purchase_requests`, `Category` becomes `categories`); an entity's optional `table:` overrides that, and the override goes through the same checks (fixtures `tablelong` and `tablepg` use it). Column names are the field names, which the schema already restricts to lowercase snake case.
 - Kebab-case ids (`my-requests`) are allowed for roles, states and pages but are rejected for field names, because they become SQL columns and TS properties.
 - A table or column name that is a Postgres reserved word (`user`, `order`, `group`, `select` and the rest of the reserved list) is rejected with a message naming the word. Plurals are checked too (`users` is fine, `User` alone never becomes a table name).
 - A table name plus the longest derived constraint name (`<table>_<column>_fkey`, `<table>_<column>_key`) must fit in Postgres's 63-byte identifier limit, or `parse` rejects it.
 - Field names that clash with system columns (`id`, `created_at`, `updated_at`, `created_by`) are rejected.
 - Table names starting with `pg_`, and the owninfra tables `audit_events` and `owninfra_meta`, are rejected.
 
-Each rule has a fixture in `packages/cli/test/fixtures/invalid/` and a row in the fixture table.
+Each rule has a fixture in `packages/cli/test/fixtures/invalid/` and a row in the fixture table, except the `owninfra_meta` reservation, which has no fixture or test yet (`audit_events` is covered by `tableaudit`).
 
 ## Zones and the manifest
 
 Every path in the output has exactly one zone.
 
-- **generated**: owned by `owninfra`. Everything inside an `app/src/**/(generated)/` folder, everything under `app/drizzle/`, and an explicit allowlist in `zones.ts`: `docker-compose.yml`, `.gitattributes`, the app's config files, `auth.ts`, `layout.tsx`, the Auth.js route, `next-auth.d.ts` and `src/lib/owninfra/index.ts`. Each text file starts with a do-not-edit header naming `owninfra generate` (JSON files, which cannot carry a comment, are listed in the manifest instead).
+- **generated**: owned by `owninfra`. Everything inside an `app/src/**/(generated)/` folder, everything under `app/drizzle/`, and an explicit allowlist in `zones.ts`: `docker-compose.yml`, `.gitattributes`, the app's config files, the `app/scripts/dev-db.mjs` script, `auth.ts`, `layout.tsx`, the Auth.js route, `next-auth.d.ts` and `src/lib/owninfra/index.ts`. Each text file starts with a do-not-edit header naming `owninfra generate` (JSON files, which cannot carry a comment, are listed in the manifest instead).
 - **user**: owned by the developer. `app/src/custom/**`, `app/src/app/(custom)/**` and `blueprint.yaml`. A user path is never generated, even when it contains a `(generated)` folder. `generate` creates a user file only when it is absent and never overwrites or deletes one.
 
 `emit` asserts that every file sits in its own zone, that no path is emitted twice, and that no two routes resolve to the same URL. These are compiler bugs, never silent overwrites. User pages live under `app/src/app/(custom)/`, a separate route group; `emit` reserves the generated URL prefixes (`/e`, `/inbox`, `/admin/audit`, `/api/e`, `/api/audit`, `/api/auth`) and rejects a user route under one of them.
@@ -183,7 +184,7 @@ User code imports only from `app/src/lib/owninfra`, a versioned surface (`export
 
 ## Dev database drift
 
-`dev` stores the hash of the IR it applied in a one-row `owninfra_meta` table. On start, if the stored hash differs from the current IR's, `dev` refuses with a message that names the change ("the blueprint changed since this database was created; run `owninfra dev --reset` to drop and recreate it") and does not touch the database. `--reset` drops and recreates the schema, migrates and seeds. With a matching hash, migrate and seed are no-ops, so `dev` can be restarted at will. Diffing IRs into incremental migrations is v1.
+`dev` stores the hash of the IR it applied in a one-row `owninfra_meta` table. On start, if the stored hash differs from the current IR's, `dev` refuses with a message that names the change ("dev-db: the blueprint changed since this database was created (applied ir <old, or none>, current <new>). Run 'owninfra dev --reset' to drop and recreate it.", with both hashes cut to 12 characters) and does not touch the database. `--reset` drops and recreates the schema, migrates and seeds. With a matching hash, migrate and seed are no-ops, so `dev` can be restarted at will. Diffing IRs into incremental migrations is v1.
 
 ## Running the approvals example locally
 
