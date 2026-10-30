@@ -33,364 +33,6 @@
     ]
    }
   },
-  "VpcpublicSubnet1Subnet2BB74ED7": {
-   "Type": "AWS::EC2::Subnet",
-   "Properties": {
-    "AvailabilityZone": {
-     "Fn::Select": [
-      0,
-      {
-       "Fn::GetAZs": ""
-      }
-     ]
-    },
-    "CidrBlock": "10.0.0.0/19",
-    "MapPublicIpOnLaunch": true,
-    "Tags": [
-     {
-      "Key": "aws-cdk:subnet-name",
-      "Value": "public"
-     },
-     {
-      "Key": "aws-cdk:subnet-type",
-      "Value": "Public"
-     },
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/publicSubnet1"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcpublicSubnet1RouteTable15C15F8E": {
-   "Type": "AWS::EC2::RouteTable",
-   "Properties": {
-    "Tags": [
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/publicSubnet1"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcpublicSubnet1RouteTableAssociation4E83B6E4": {
-   "Type": "AWS::EC2::SubnetRouteTableAssociation",
-   "Properties": {
-    "RouteTableId": {
-     "Ref": "VpcpublicSubnet1RouteTable15C15F8E"
-    },
-    "SubnetId": {
-     "Ref": "VpcpublicSubnet1Subnet2BB74ED7"
-    }
-   }
-  },
-  "VpcpublicSubnet1DefaultRouteB88F9E93": {
-   "Type": "AWS::EC2::Route",
-   "Properties": {
-    "DestinationCidrBlock": "0.0.0.0/0",
-    "GatewayId": {
-     "Ref": "VpcIGWD7BA715C"
-    },
-    "RouteTableId": {
-     "Ref": "VpcpublicSubnet1RouteTable15C15F8E"
-    }
-   },
-   "DependsOn": [
-    "VpcVPCGWBF912B6E"
-   ]
-  },
-  "VpcpublicSubnet1EIP411541E6": {
-   "Type": "AWS::EC2::EIP",
-   "Properties": {
-    "Domain": "vpc",
-    "Tags": [
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/publicSubnet1"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ]
-   }
-  },
-  "VpcpublicSubnet1NATGatewayA036E8A6": {
-   "Type": "AWS::EC2::NatGateway",
-   "Properties": {
-    "AllocationId": {
-     "Fn::GetAtt": [
-      "VpcpublicSubnet1EIP411541E6",
-      "AllocationId"
-     ]
-    },
-    "SubnetId": {
-     "Ref": "VpcpublicSubnet1Subnet2BB74ED7"
-    },
-    "Tags": [
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/publicSubnet1"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ]
-   },
-   "DependsOn": [
-    "VpcpublicSubnet1DefaultRouteB88F9E93",
-    "VpcpublicSubnet1RouteTableAssociation4E83B6E4"
-   ]
-  },
-  "VpcpublicSubnet2SubnetE34B022A": {
-   "Type": "AWS::EC2::Subnet",
-   "Properties": {
-    "AvailabilityZone": {
-     "Fn::Select": [
-      1,
-      {
-       "Fn::GetAZs": ""
-      }
-     ]
-    },
-    "CidrBlock": "10.0.32.0/19",
-    "MapPublicIpOnLaunch": true,
-    "Tags": [
-     {
-      "Key": "aws-cdk:subnet-name",
-      "Value": "public"
-     },
-     {
-      "Key": "aws-cdk:subnet-type",
-      "Value": "Public"
-     },
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/publicSubnet2"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcpublicSubnet2RouteTableC5A6DF77": {
-   "Type": "AWS::EC2::RouteTable",
-   "Properties": {
-    "Tags": [
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/publicSubnet2"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcpublicSubnet2RouteTableAssociationCCE257FF": {
-   "Type": "AWS::EC2::SubnetRouteTableAssociation",
-   "Properties": {
-    "RouteTableId": {
-     "Ref": "VpcpublicSubnet2RouteTableC5A6DF77"
-    },
-    "SubnetId": {
-     "Ref": "VpcpublicSubnet2SubnetE34B022A"
-    }
-   }
-  },
-  "VpcpublicSubnet2DefaultRoute732F0BEB": {
-   "Type": "AWS::EC2::Route",
-   "Properties": {
-    "DestinationCidrBlock": "0.0.0.0/0",
-    "GatewayId": {
-     "Ref": "VpcIGWD7BA715C"
-    },
-    "RouteTableId": {
-     "Ref": "VpcpublicSubnet2RouteTableC5A6DF77"
-    }
-   },
-   "DependsOn": [
-    "VpcVPCGWBF912B6E"
-   ]
-  },
-  "VpcappSubnet1SubnetAE489B2F": {
-   "Type": "AWS::EC2::Subnet",
-   "Properties": {
-    "AvailabilityZone": {
-     "Fn::Select": [
-      0,
-      {
-       "Fn::GetAZs": ""
-      }
-     ]
-    },
-    "CidrBlock": "10.0.64.0/19",
-    "MapPublicIpOnLaunch": false,
-    "Tags": [
-     {
-      "Key": "aws-cdk:subnet-name",
-      "Value": "app"
-     },
-     {
-      "Key": "aws-cdk:subnet-type",
-      "Value": "Private"
-     },
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/appSubnet1"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcappSubnet1RouteTable072E8E09": {
-   "Type": "AWS::EC2::RouteTable",
-   "Properties": {
-    "Tags": [
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/appSubnet1"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcappSubnet1RouteTableAssociation168BF781": {
-   "Type": "AWS::EC2::SubnetRouteTableAssociation",
-   "Properties": {
-    "RouteTableId": {
-     "Ref": "VpcappSubnet1RouteTable072E8E09"
-    },
-    "SubnetId": {
-     "Ref": "VpcappSubnet1SubnetAE489B2F"
-    }
-   }
-  },
-  "VpcappSubnet1DefaultRoute64294A8F": {
-   "Type": "AWS::EC2::Route",
-   "Properties": {
-    "DestinationCidrBlock": "0.0.0.0/0",
-    "NatGatewayId": {
-     "Ref": "VpcpublicSubnet1NATGatewayA036E8A6"
-    },
-    "RouteTableId": {
-     "Ref": "VpcappSubnet1RouteTable072E8E09"
-    }
-   }
-  },
-  "VpcappSubnet2Subnet2449FB56": {
-   "Type": "AWS::EC2::Subnet",
-   "Properties": {
-    "AvailabilityZone": {
-     "Fn::Select": [
-      1,
-      {
-       "Fn::GetAZs": ""
-      }
-     ]
-    },
-    "CidrBlock": "10.0.96.0/19",
-    "MapPublicIpOnLaunch": false,
-    "Tags": [
-     {
-      "Key": "aws-cdk:subnet-name",
-      "Value": "app"
-     },
-     {
-      "Key": "aws-cdk:subnet-type",
-      "Value": "Private"
-     },
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/appSubnet2"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcappSubnet2RouteTableB76BFC59": {
-   "Type": "AWS::EC2::RouteTable",
-   "Properties": {
-    "Tags": [
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc/appSubnet2"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   }
-  },
-  "VpcappSubnet2RouteTableAssociation81E96A75": {
-   "Type": "AWS::EC2::SubnetRouteTableAssociation",
-   "Properties": {
-    "RouteTableId": {
-     "Ref": "VpcappSubnet2RouteTableB76BFC59"
-    },
-    "SubnetId": {
-     "Ref": "VpcappSubnet2Subnet2449FB56"
-    }
-   }
-  },
-  "VpcappSubnet2DefaultRouteEBCCC1EA": {
-   "Type": "AWS::EC2::Route",
-   "Properties": {
-    "DestinationCidrBlock": "0.0.0.0/0",
-    "NatGatewayId": {
-     "Ref": "VpcpublicSubnet1NATGatewayA036E8A6"
-    },
-    "RouteTableId": {
-     "Ref": "VpcappSubnet2RouteTableB76BFC59"
-    }
-   }
-  },
   "VpcdbSubnet1Subnet1B82B149": {
    "Type": "AWS::EC2::Subnet",
    "Properties": {
@@ -402,7 +44,7 @@
       }
      ]
     },
-    "CidrBlock": "10.0.128.0/19",
+    "CidrBlock": "10.0.0.0/17",
     "MapPublicIpOnLaunch": false,
     "Tags": [
      {
@@ -467,7 +109,7 @@
       }
      ]
     },
-    "CidrBlock": "10.0.160.0/19",
+    "CidrBlock": "10.0.128.0/17",
     "MapPublicIpOnLaunch": false,
     "Tags": [
      {
@@ -518,32 +160,6 @@
     },
     "SubnetId": {
      "Ref": "VpcdbSubnet2Subnet01192A3B"
-    }
-   }
-  },
-  "VpcIGWD7BA715C": {
-   "Type": "AWS::EC2::InternetGateway",
-   "Properties": {
-    "Tags": [
-     {
-      "Key": "Name",
-      "Value": "spend-approvals-dev/Vpc"
-     },
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ]
-   }
-  },
-  "VpcVPCGWBF912B6E": {
-   "Type": "AWS::EC2::VPCGatewayAttachment",
-   "Properties": {
-    "InternetGatewayId": {
-     "Ref": "VpcIGWD7BA715C"
-    },
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
     }
    }
   },
@@ -676,37 +292,6 @@
     }
    }
   },
-  "DbSecurityGroupfromspendapprovalsdevAppSecurityGroupC9CCB971IndirectPort5D5D558F": {
-   "Type": "AWS::EC2::SecurityGroupIngress",
-   "Properties": {
-    "Description": "from spendapprovalsdevAppSecurityGroupC9CCB971:{IndirectPort}",
-    "FromPort": {
-     "Fn::GetAtt": [
-      "Db5D02A0A9",
-      "Endpoint.Port"
-     ]
-    },
-    "GroupId": {
-     "Fn::GetAtt": [
-      "DbSecurityGroupC34ABFAB",
-      "GroupId"
-     ]
-    },
-    "IpProtocol": "tcp",
-    "SourceSecurityGroupId": {
-     "Fn::GetAtt": [
-      "AppSecurityGroupC292657D",
-      "GroupId"
-     ]
-    },
-    "ToPort": {
-     "Fn::GetAtt": [
-      "Db5D02A0A9",
-      "Endpoint.Port"
-     ]
-    }
-   }
-  },
   "DbSecretCF6D79B0": {
    "Type": "AWS::SecretsManager::Secret",
    "Properties": {
@@ -758,6 +343,7 @@
      "Ref": "DbSubnets93851898"
     },
     "DatabaseName": "spend_approvals",
+    "EnableHttpEndpoint": true,
     "EnableIAMDatabaseAuthentication": true,
     "Engine": "aurora-postgresql",
     "EngineVersion": "16.11",
@@ -1036,20 +622,34 @@
       },
       {
        "Action": [
-        "ec2:CreateNetworkInterface",
-        "ec2:DescribeNetworkInterfaces",
-        "ec2:DeleteNetworkInterface",
-        "ec2:AssignPrivateIpAddresses",
-        "ec2:UnassignPrivateIpAddresses"
+        "rds-data:ExecuteStatement",
+        "rds-data:BeginTransaction",
+        "rds-data:CommitTransaction",
+        "rds-data:RollbackTransaction"
        ],
        "Effect": "Allow",
-       "Resource": "*"
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          "arn:",
+          {
+           "Ref": "AWS::Partition"
+          },
+          ":rds:eu-north-1:",
+          {
+           "Ref": "AWS::AccountId"
+          },
+          ":cluster:",
+          {
+           "Ref": "Db5D02A0A9"
+          }
+         ]
+        ]
+       }
       },
       {
-       "Action": [
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:DescribeSecret"
-       ],
+       "Action": "secretsmanager:GetSecretValue",
        "Effect": "Allow",
        "Resource": {
         "Ref": "DbSecretAttachment7AED447C"
@@ -1066,34 +666,6 @@
     ]
    }
   },
-  "AppSecurityGroupC292657D": {
-   "Type": "AWS::EC2::SecurityGroup",
-   "Properties": {
-    "GroupDescription": "Automatic security group for Lambda Function spendapprovalsdevAppDB9044AB",
-    "SecurityGroupEgress": [
-     {
-      "CidrIp": "0.0.0.0/0",
-      "Description": "Allow all outbound traffic by default",
-      "IpProtocol": "-1"
-     }
-    ],
-    "Tags": [
-     {
-      "Key": "Project",
-      "Value": "owninfra"
-     }
-    ],
-    "VpcId": {
-     "Ref": "Vpc8378EB38"
-    }
-   },
-   "DependsOn": [
-    "VpcappSubnet1DefaultRoute64294A8F",
-    "VpcappSubnet1RouteTableAssociation168BF781",
-    "VpcappSubnet2DefaultRouteEBCCC1EA",
-    "VpcappSubnet2RouteTableAssociation81E96A75"
-   ]
-  },
   "AppF1B96344": {
    "Type": "AWS::Lambda::Function",
    "Properties": {
@@ -1108,6 +680,25 @@
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
+      "DATABASE_CLUSTER_ARN": {
+       "Fn::Join": [
+        "",
+        [
+         "arn:",
+         {
+          "Ref": "AWS::Partition"
+         },
+         ":rds:eu-north-1:",
+         {
+          "Ref": "AWS::AccountId"
+         },
+         ":cluster:",
+         {
+          "Ref": "Db5D02A0A9"
+         }
+        ]
+       ]
+      },
       "DATABASE_SECRET_ARN": {
        "Ref": "DbSecretAttachment7AED447C"
       },
@@ -1144,33 +735,11 @@
       "Value": "owninfra"
      }
     ],
-    "Timeout": 30,
-    "VpcConfig": {
-     "SecurityGroupIds": [
-      {
-       "Fn::GetAtt": [
-        "AppSecurityGroupC292657D",
-        "GroupId"
-       ]
-      }
-     ],
-     "SubnetIds": [
-      {
-       "Ref": "VpcappSubnet1SubnetAE489B2F"
-      },
-      {
-       "Ref": "VpcappSubnet2Subnet2449FB56"
-      }
-     ]
-    }
+    "Timeout": 30
    },
    "DependsOn": [
     "AppRoleDefaultPolicy1872B475",
-    "AppRoleDC883459",
-    "VpcappSubnet1DefaultRoute64294A8F",
-    "VpcappSubnet1RouteTableAssociation168BF781",
-    "VpcappSubnet2DefaultRouteEBCCC1EA",
-    "VpcappSubnet2RouteTableAssociation81E96A75"
+    "AppRoleDC883459"
    ]
   },
   "AppFunctionUrl903A073C": {
@@ -1183,13 +752,7 @@
       "Arn"
      ]
     }
-   },
-   "DependsOn": [
-    "VpcappSubnet1DefaultRoute64294A8F",
-    "VpcappSubnet1RouteTableAssociation168BF781",
-    "VpcappSubnet2DefaultRouteEBCCC1EA",
-    "VpcappSubnet2RouteTableAssociation81E96A75"
-   ]
+   }
   },
   "Appinvokefunctionurl8F2366B1": {
    "Type": "AWS::Lambda::Permission",
@@ -1203,13 +766,7 @@
     },
     "FunctionUrlAuthType": "NONE",
     "Principal": "*"
-   },
-   "DependsOn": [
-    "VpcappSubnet1DefaultRoute64294A8F",
-    "VpcappSubnet1RouteTableAssociation168BF781",
-    "VpcappSubnet2DefaultRouteEBCCC1EA",
-    "VpcappSubnet2RouteTableAssociation81E96A75"
-   ]
+   }
   },
   "Appinvokefunction16AF84A2": {
    "Type": "AWS::Lambda::Permission",
@@ -1223,13 +780,7 @@
     },
     "InvokedViaFunctionUrl": true,
     "Principal": "*"
-   },
-   "DependsOn": [
-    "VpcappSubnet1DefaultRoute64294A8F",
-    "VpcappSubnet1RouteTableAssociation168BF781",
-    "VpcappSubnet2DefaultRouteEBCCC1EA",
-    "VpcappSubnet2RouteTableAssociation81E96A75"
-   ]
+   }
   }
  },
  "Parameters": {
