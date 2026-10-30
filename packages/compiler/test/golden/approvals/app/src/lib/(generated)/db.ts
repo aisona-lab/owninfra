@@ -40,7 +40,16 @@ export function fromEnv(env: NodeJS.ProcessEnv): Db {
   return tcp(
     postgres(env.DATABASE_URL ?? "postgres://owninfra:owninfra@localhost:5432/owninfra", {
       max: 5,
-      types: { date: { to: 1082, from: [1082], serialize: (v: string) => v, parse: (v: string) => v } },
+      // Params reach both drivers as text: a date stays a string, and a jsonb param is already JSON (postgres.js would encode it again).
+      types: {
+        date: { to: 1082, from: [1082], serialize: (v: string) => v, parse: (v: string) => v },
+        jsonb: {
+          to: 3802,
+          from: [114, 3802],
+          serialize: (v: string) => v,
+          parse: (v: string) => JSON.parse(v) as unknown,
+        },
+      },
     }),
   );
 }

@@ -19,6 +19,8 @@
     "prettier": "3.9.10"
   },
   "devDependencies": {
+    "@aws-sdk/client-rds-data": "3.1161.0",
+    "postgres": "3.4.9",
     "yaml": "^2.6.0"
   }
 }
