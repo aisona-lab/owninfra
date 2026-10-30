@@ -6,9 +6,10 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as rds from "aws-cdk-lib/aws-rds";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { describe, expect, it } from "vitest";
 import { validateBlueprintYaml } from "@owninfra/blueprint-schema";
-import { appStack, autoPause, newApp, projectTag } from "../src/index.js";
+import { appStack, autoPause, newApp, projectTag, unrotatedSecretReason } from "../src/index.js";
 
 const blueprint = readFileSync(new URL("../../../examples/approvals/blueprint.yaml", import.meta.url), "utf8");
 
@@ -38,6 +39,18 @@ function synth({ yaml = blueprint, envName = "dev", extend, plain = false }: Syn
   const raw = readFileSync(join(outdir, stack.templateFile), "utf8");
   return { stack, assembly, raw, template: JSON.parse(raw) as Template };
 }
+
+/**
+ * Every AwsSolutions acknowledgement in the stack, read after synthesis so aspect-added ones are included.
+ * CDK stores them as `Annotation::AwsSolutions-…`; its own built-in `CloudFormation-Validate::…` acknowledgements are left out.
+ */
+const acks = (stack: Stack) =>
+  stack.node
+    .findAll()
+    .flatMap((c) => c.node.metadata.filter((m) => m.type === "aws:cdk:acknowledged-rules").map((m) => ({ path: c.node.path, rules: m.data as Record<string, string> })))
+    .flatMap(({ path, rules }) => Object.entries(rules).map(([id, reason]) => ({ path, id: id.replace(/^Annotation::/, ""), reason })))
+    .filter((a) => a.id.startsWith("AwsSolutions-"));
+const ackIds = (stack: Stack) => acks(stack).map((a) => a.id);
 
 const ofType = (t: Template, type: string) => Object.values(t.Resources).filter((r) => r.Type === type);
 const one = (t: Template, type: string) => {
@@ -202,5 +215,63 @@ describe("user pool MFA follows auth.mfa", () => {
   it("gives different templates for required, optional and off, and unset matches off", () => {
     expect(new Set([raws.get("required"), raws.get("optional"), raws.get("off")]).size).toBe(3);
     expect(raws.get(undefined)).toBe(raws.get("off"));
+  });
+});
+
+describe("cdk-nag acknowledgements", () => {
+  const rds10Dev =
+    "The blueprint sets environments.dev.database.deletion_protection to false: this dev cluster has DeletionProtection off, so deleting the stack deletes it. Its DeletionPolicy is Snapshot (the CDK default; the blueprint's removal_policy is not wired yet), so CloudFormation takes a final snapshot first.";
+  const cog2Optional =
+    "The blueprint sets auth.mfa to optional, so MfaConfiguration is OPTIONAL: users can enroll TOTP but are not made to. auth.mfa: required sets it to ON and removes this acknowledgement.";
+
+  it("pins every acknowledgement and its reason for the example blueprint's dev stack", () => {
+    expect(acks(synth().stack)).toEqual([
+      { path: "spend-approvals-dev/Db", id: "AwsSolutions-RDS10", reason: rds10Dev },
+      { path: "spend-approvals-dev/Db/Secret/Resource", id: "AwsSolutions-SMG4", reason: unrotatedSecretReason },
+      { path: "spend-approvals-dev/Users", id: "AwsSolutions-COG2", reason: cog2Optional },
+    ]);
+  });
+
+  it("RDS10: prod (deletion_protection: true) has protection on and no acknowledgement", () => {
+    const { stack, template } = synth({ envName: "prod" });
+    expect(one(template, "AWS::RDS::DBCluster").DeletionProtection).toBe(true);
+    expect(ackIds(stack)).not.toContain("AwsSolutions-RDS10");
+  });
+
+  it("RDS10: dev's reason matches dev's config, and flipping it to true drops the acknowledgement", () => {
+    const dev = synth();
+    expect(one(dev.template, "AWS::RDS::DBCluster").DeletionProtection).toBe(false);
+    expect(dev.template.Resources["Db5D02A0A9"]).toMatchObject({ DeletionPolicy: "Snapshot" });
+    expect(acks(dev.stack).find((a) => a.id === "AwsSolutions-RDS10")?.reason).toBe(rds10Dev);
+    const flipped = synth({ yaml: blueprint.replace("deletion_protection: false", "deletion_protection: true") });
+    expect(ackIds(flipped.stack)).not.toContain("AwsSolutions-RDS10");
+    expect(acks(dev.stack).map((a) => a.reason).join(" ")).not.toMatch(/owninfra destroy/);
+  });
+
+  it("SMG4: acknowledged only while the secret has no rotation schedule", () => {
+    expect(ofType(synth().template, "AWS::SecretsManager::RotationSchedule")).toEqual([]);
+    const rotated = synth({
+      extend: (s) =>
+        new secretsmanager.CfnRotationSchedule(s, "Rotation", {
+          secretId: (s.node.findChild("Db") as rds.DatabaseCluster).secret!.secretArn,
+          rotationLambdaArn: "arn:aws:lambda:eu-north-1:111111111111:function:rotate",
+          rotationRules: { automaticallyAfterDays: 30 },
+        }),
+    });
+    expect(ackIds(rotated.stack)).not.toContain("AwsSolutions-SMG4");
+  });
+
+  it.each([
+    { mfa: "required", reason: undefined },
+    { mfa: "optional", reason: cog2Optional },
+    { mfa: "off", reason: "The blueprint sets auth.mfa to off, so MfaConfiguration is OFF. auth.mfa: required sets it to ON and removes this acknowledgement." },
+    {
+      mfa: undefined,
+      reason:
+        "The blueprint leaves auth.mfa unset and the schema has no default, so MfaConfiguration is OFF (Cognito's default). auth.mfa: required sets it to ON and removes this acknowledgement.",
+    },
+  ])("COG2 with auth.mfa $mfa: acknowledged only when MFA is not required", ({ mfa, reason }) => {
+    const { stack } = synth({ yaml: withMfa(mfa) });
+    expect(acks(stack).find((a) => a.id === "AwsSolutions-COG2")?.reason).toBe(reason);
   });
 });
