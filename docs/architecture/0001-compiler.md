@@ -1,10 +1,10 @@
 # 0001: Compiler architecture
 
-Status: approved, amended after Eng Verifier review (round 1). Covers MVP week 1 (`init`, `generate`, `dev` for the approvals example). Deploy, the harness beyond L0, and the agent are out of scope here except where they constrain the shapes below.
+Status: implemented in #3 and #4, and amended to match the merged code. Covers MVP week 1 (`init`, `generate`, `dev` for the approvals example). Deploy, the harness beyond L0, and the agent are out of scope here except where they constrain the shapes below.
 
 ## Context
 
-`validate` today parses YAML into a Zod-inferred `Blueprint` and runs semantic checks on that same loose type. Every later stage would have to re-check what validation already proved: that a `ref` points at a real entity, that a transition's states exist, that `own` is only used with ownership. This note fixes the shapes and stages before any generator code is written.
+Before week 1, `validate` parsed YAML into a Zod-inferred `Blueprint` and ran semantic checks on that same loose type. Every later stage would have to re-check what validation already proved: that a `ref` points at a real entity, that a transition's states exist, that `own` is only used with ownership. This note fixed the shapes and stages before any generator code was written.
 
 ## Data shapes
 
@@ -22,12 +22,13 @@ References are resolved, not repeated as strings:
 
 ```ts
 type Field =
-  | { kind: "scalar"; name: FieldName; type: ScalarType; required: boolean; unique: boolean; constraints: ScalarConstraints }
-  | { kind: "enum"; name: FieldName; values: NonEmpty<string>; default?: string; required: boolean }
-  | { kind: "ref"; name: FieldName; target: EntityName; required: boolean };
+  | { kind: "scalar"; name: FieldName; label: string; type: ScalarType; required: boolean; unique: boolean; constraints: ScalarConstraints }
+  | { kind: "enum"; name: FieldName; label: string; values: NonEmpty<string>; default?: string; required: boolean }
+  | { kind: "ref"; name: FieldName; label: string; target: EntityName; required: boolean };
 
 type Entity = {
   name: EntityName;
+  table: TableName;
   label: string;
   fields: ReadonlyMap<FieldName, Field>;
   display: FieldName;
@@ -75,11 +76,13 @@ Environments are `{ dev: Env; prod?: Env }` in the MVP. A missing `dev` cannot b
 
 The IR is the model rearranged into what each emitter consumes. It holds no new decisions, only derived facts:
 
-- `tables`: Postgres table name, columns with SQL types, nullability, unique and foreign-key constraints, the workflow `status` column with a check constraint over the state ids, and the system columns (`id`, `created_at`, `updated_at`, `created_by`).
-- `policies`: a flat, sorted list of `{ entity, role, action, scope, inStates }` rows. The generated permission guard and its unit tests are emitted from this one list.
-- `transitions`: a flat list with a precomputed `forbiddenFor` role set per transition, so smoke and unit tests for negative RBAC (the 403 case) come from data and are not hand-written.
-- `routes` and `pages`: list, detail, create and edit per entity, plus the "my pending items" inbox and the admin audit view.
-- `audit`: enabled flag and the `audit_events` table definition.
+- `entities`: per entity, the Postgres table name, display field, ownership flag, columns (SQL type, nullability, unique, foreign-key target, enum values, default and checks) and the workflow (states, transitions). The system columns (`id`, `created_at`, `updated_at`, `created_by`) and the workflow column's check constraint are added by the SQL emitter, not stored in the IR.
+- `policies`: a flat, sorted list of `{ entity, role, action, scope, inStates }` rows. `registry.ts` carries this one list into the app, where the guard and its tests read it.
+- Transitions: each workflow's list, sorted by id, with a precomputed `forbiddenFor` role set and a `forbidCreator` flag (separation of duties), so the generated app's negative RBAC tests (the 403 case, `guard.test.ts`) iterate data and are not hand-written.
+- `seed` and `seedUsers`: seed rows per table, and the seed users for the auth stub.
+- `audit`: the enabled flag. The `audit_events` table comes from the SQL and Drizzle emitters.
+
+There are no routes or pages in the IR. Every entity is served by the dynamic `/e/[entity]` and `/e/[entity]/[id]` routes, which read `registry.ts`.
 
 Every collection in the IR is an array. No `Map` iteration order and no object key order is relied on during emission.
 
@@ -90,7 +93,7 @@ Some YAML orders are the author's intent and are preserved. The rest are sorted.
 | Order | Meaning | Treatment |
 | --- | --- | --- |
 | Fields within an entity | Form order, list column fallback, SQL column order | Preserved |
-| `list.columns` | Column order in the list view | Preserved |
+| `list.columns` | Column order in the list view | Validated only; `list` is not carried into the `Model` yet |
 | Workflow states | Display order of states, order of the SQL check constraint values | Preserved |
 | Enum values | Option order in forms, SQL check order | Preserved |
 | Entities | None | Sorted by name |
@@ -98,10 +101,11 @@ Some YAML orders are the author's intent and are preserved. The rest are sorted.
 | Transitions | None | Sorted by id |
 | Permission keys (entity, role, action) | None | Sorted |
 | Seed rows | Insert order (stable ids are not derived from it) | Preserved |
+| Seed users | None | Sorted by email |
 
 The order-independence test shuffles only the "None" rows. A shuffle of a preserved order is expected to change the output, and a separate test asserts that it does for fields.
 
-Sorting compares strings by UTF-16 code unit (`a < b`), never `localeCompare`, so the result does not depend on the host locale or ICU version. `parse` NFC-normalizes every identifier and label, so visually identical input produces identical bytes. The repository and the generated app carry a `.gitattributes` with `* text=auto eol=lf`, and `emit` writes only `\n`.
+Sorting compares strings by UTF-16 code unit (`a < b`), never `localeCompare`, so the result does not depend on the host locale or ICU version. `validateBlueprint` NFC-normalizes every string and key before Zod sees it, so visually identical input produces identical bytes. The repository and the generated app carry a `.gitattributes` with `* text=auto eol=lf`, and `emit` writes only `\n`.
 
 ## Compiler stages
 
@@ -115,23 +119,23 @@ YAML text
   -> disk             (write, the only IO)
 ```
 
-`emit(ir): FileSet` returns `ReadonlyArray<{ path: string; contents: string; zone: "generated" | "user" }>`, sorted by path. It is a pure function with no clock, no randomness, no environment and no filesystem reads. Templates are bundled as code, not read at runtime.
+`emit(ir): Promise<FileSet>` returns `ReadonlyArray<{ path: string; contents: string; zone: "generated" | "user" }>`, sorted by path. It is async only because Prettier's `format` is. It is a pure function with no clock, no randomness, no environment and no filesystem reads. Templates are bundled as code (`static-templates.ts`, written at build time), not read at runtime.
 
 `write(fileSet, outDir)` is the only side effect. See Zones and the manifest below. Running `generate` twice with the same blueprint changes nothing on disk.
 
-The current `checkSemantics` is replaced by `parse`. `validate` becomes `parseYaml -> Zod -> parse` and prints the same issues. The existing fixture table keeps guarding the messages.
+`checkSemantics` was replaced by `parse`. `validate` is `parseYaml -> Zod -> parse` and prints the same issues. The existing fixture table keeps guarding the messages.
 
 ## Template strategy
 
-Templates are TypeScript functions from an IR slice to a string, using tagged template literals. There is no string-template engine.
+Most of the app is static template files, copied verbatim. Six files are computed from the IR by tagged-template functions in `emit.ts`: `docker-compose.yml`, `.gitattributes`, `app/drizzle/0000_init.sql`, `app/drizzle/seed.json`, `src/lib/(generated)/schema.ts` and `src/lib/(generated)/registry.ts`. The static code reads the blueprint at runtime through `registry.ts`. There is no string-template engine.
 
-- **Next.js** (App Router, `output: "standalone"`). The generated routes live under `app/src/app/(generated)/`. Each entity gets list, detail and form pages, built from a small set of shared components that are copied once into `src/lib/(generated)/ui`. Server actions call one guard, `authorize(user, entity, action, row)`, generated from `policies`.
-- **Drizzle.** `src/lib/(generated)/schema.ts` comes from `tables`. Migrations are generated SQL files with deterministic names (`0000_init.sql`), not `drizzle-kit generate` output, so the compiler stays pure and offline. Later blueprint changes produce new numbered migrations by diffing two IRs. That diffing is v1.
-- **Workflow.** `src/lib/(generated)/workflows.ts` holds a transition table per entity. One server action, `transition(entity, id, transitionId)`, checks role, owner and separation of duties, plus required fields, inside one database transaction that also writes the audit event.
+- **Next.js** (App Router, `output: "standalone"`). The generated routes live under `app/src/app/(generated)/` and `app/src/app/api/(generated)/`: one dynamic list page and one detail page serve every entity (`/e/[entity]`, `/e/[entity]/[id]`), plus the inbox and the admin audit view. Server actions and API routes go through the repository functions, which call one guard, `authorize(user, entity, action, row)` (and `readScope` for lists), reading `policies` from `registry.ts`.
+- **Drizzle.** `src/lib/(generated)/schema.ts` comes from `entities`. Migrations are generated SQL files with deterministic names (`0000_init.sql`), not `drizzle-kit generate` output, so the compiler stays pure and offline. Later blueprint changes produce new numbered migrations by diffing two IRs. That diffing is v1.
+- **Workflow.** Transitions live in `registry.ts`; there is no `workflows.ts`. `decideTransition` in `guard.ts` checks role, owner and separation of duties, plus required fields, and `transition(user, table, id, transitionId, input)` in `repository.ts` applies it inside one database transaction that also writes the audit event. The `transitionAction` server action and the transitions API route both call it.
 - **Audit log.** Every mutation goes through one `withAudit` helper that writes `{ actor, entity, entityId, action, before, after, at }` in the same transaction. There is no trigger-based auditing, so the actor is always the authenticated user.
 - **Formatting.** Generated TS is printed with Prettier as part of `emit`. Prettier is called with an explicit options object and `config: false` semantics (no `resolveConfig`, no `.prettierrc`, no `.editorconfig` lookup), so a config file in the user's tree cannot change the bytes. The exact Prettier version is a pinned (non-range) dependency of the compiler and is recorded in `owninfra.lock.json`. A Prettier upgrade is its own PR that bumps the pin and runs `pnpm goldens:update`, so the diff reviews as pure formatting.
 
-Templates live in `packages/templates`. The compiler imports them as plain functions, so `tsc` type-checks templates against the IR.
+Templates live in `packages/compiler/templates/`, split into `generated/` and `user/` zones. `tsc` type-checks them inside the generated app (the CI `generated-app` job) against `src/lib/(generated)/types.ts`, not against the IR.
 
 ## Determinism and golden tests
 
@@ -151,6 +155,7 @@ All naming decisions live in `parse`, so `lower` stays total and emitters never 
 - A table or column name that is a Postgres reserved word (`user`, `order`, `group`, `select` and the rest of the reserved list) is rejected with a message naming the word. Plurals are checked too (`users` is fine, `User` alone never becomes a table name).
 - A table name plus the longest derived constraint name (`<table>_<column>_fkey`, `<table>_<column>_key`) must fit in Postgres's 63-byte identifier limit, or `parse` rejects it.
 - Field names that clash with system columns (`id`, `created_at`, `updated_at`, `created_by`) are rejected.
+- Table names starting with `pg_`, and the owninfra tables `audit_events` and `owninfra_meta`, are rejected.
 
 Each rule has a fixture in `packages/cli/test/fixtures/invalid/` and a row in the fixture table.
 
@@ -158,23 +163,23 @@ Each rule has a fixture in `packages/cli/test/fixtures/invalid/` and a row in th
 
 Every path in the output has exactly one zone.
 
-- **generated**: owned by `owninfra`. Everything under `app/src/**/(generated)/**`, `app/drizzle/`, `docker-compose.yml` and the app's config files. Each text file starts with a do-not-edit header naming `owninfra generate` (JSON files, which cannot carry a comment, are listed in the manifest instead).
-- **user**: owned by the developer. `app/src/custom/**` and `blueprint.yaml`. `generate` creates a user file only when it is absent and never overwrites or deletes one.
+- **generated**: owned by `owninfra`. Everything inside an `app/src/**/(generated)/` folder, everything under `app/drizzle/`, and an explicit allowlist in `zones.ts`: `docker-compose.yml`, `.gitattributes`, the app's config files, `auth.ts`, `layout.tsx`, the Auth.js route, `next-auth.d.ts` and `src/lib/owninfra/index.ts`. Each text file starts with a do-not-edit header naming `owninfra generate` (JSON files, which cannot carry a comment, are listed in the manifest instead).
+- **user**: owned by the developer. `app/src/custom/**`, `app/src/app/(custom)/**` and `blueprint.yaml`. A user path is never generated, even when it contains a `(generated)` folder. `generate` creates a user file only when it is absent and never overwrites or deletes one.
 
-`emit` asserts that no path falls in both zones and that no two routes resolve to the same URL (for example an entity whose plural collides with `admin` or `inbox`). Both are compiler bugs or blueprint errors, never silent overwrites. User pages live under `app/src/app/(custom)/`, a separate route group; `emit` reserves the generated URL prefixes and the golden test fails if a generated route lands in `(custom)`.
+`emit` asserts that every file sits in its own zone, that no path is emitted twice, and that no two routes resolve to the same URL. These are compiler bugs, never silent overwrites. User pages live under `app/src/app/(custom)/`, a separate route group; `emit` reserves the generated URL prefixes (`/e`, `/inbox`, `/admin/audit`, `/api/e`, `/api/audit`, `/api/auth`) and rejects a user route under one of them.
 
-`owninfra.lock.json` holds the owninfra version, the Prettier version, and a manifest of `{ path: sha256 }` for every generated file. `write` reconciles against it:
+`owninfra.lock.json` holds the owninfra version, the Prettier version, the IR hash, and a manifest of `{ path: sha256 }` for every generated file. `write` refuses any lock entry or output path outside the generated zone, or one that resolves elsewhere through a symlink or a case mismatch, and then reconciles against the manifest:
 
 1. For each generated file already on disk, compare its hash with the manifest. A mismatch means it was hand-edited since the last generate, and `generate` refuses with the list of edited files unless `--force` is passed.
 2. Write each file through a temp path and rename, skipping files whose bytes are already identical.
 3. Delete orphans, meaning files listed in the previous manifest but absent from the new file set, if their hash still matches (an edited orphan is the same refusal as step 1).
 4. Write the new manifest last.
 
-A crash at any point leaves files whose hashes either match the old manifest or the new file set, so the next run converges. A dirty git tree is only a warning.
+A crash at any point leaves files whose hashes either match the old manifest or the new file set, so the next run converges. A dirty git tree is only a warning, and so is a stray file in a `(generated)` folder that owninfra did not write.
 
 ## User code API
 
-User code imports only from `app/src/lib/owninfra`, a versioned surface (`export const apiVersion = 1`) that exposes the session helper, the typed repository functions (`list`, `get`, `create`, `update`, `remove`, `transition`, each audited and guarded) and the generated types. The raw database client lives in `(generated)/db.ts`, and the generated ESLint config has a `no-restricted-imports` rule that blocks importing it from `src/custom/**`. The golden test writes a sample user file that uses the public API and runs `tsc` over the generated app, so a breaking change to the API fails the build.
+User code imports only from `app/src/lib/owninfra`, a versioned surface (`export const apiVersion = 1`) that exposes the session helpers (`currentUser`, `requireUser`), the repository functions (`list`, `get`, `create`, `update`, `remove`, `transition`, `inbox`; the writes are audited, all are guarded), `HttpError`, the `registry` and the generated types. The raw database client lives in `(generated)/db.ts`, and the generated ESLint config has a `no-restricted-imports` rule that blocks `(generated)` modules, `postgres` and `drizzle-orm` from `src/custom/**` and `src/app/(custom)/**`. `generate` writes a sample user file, `src/custom/example.ts`, that uses the public API, and the CI `generated-app` job runs `tsc` over the generated app, so a breaking change to the API fails CI.
 
 ## Dev database drift
 
@@ -182,14 +187,16 @@ User code imports only from `app/src/lib/owninfra`, a versioned surface (`export
 
 ## Running the approvals example locally
 
+owninfra is not on npm yet, so run the CLI from a clone (`alias owninfra="node $PWD/packages/cli/dist/bin.js"` after `pnpm install && pnpm build`):
+
 ```
-npx owninfra init --example approvals   # copies examples/approvals/blueprint.yaml into ./approvals
+owninfra init --example approvals   # copies examples/approvals/blueprint.yaml into ./approvals (or a dir you pass)
 cd approvals
-npx owninfra generate                   # writes app/, docker-compose.yml, owninfra.lock.json
-npx owninfra dev                        # docker compose up postgres, migrate, seed, next dev
+owninfra generate                   # writes app/, docker-compose.yml, owninfra.lock.json
+owninfra dev                        # docker compose up postgres, migrate, seed, next dev
 ```
 
-- **Database.** `docker-compose.yml` runs Postgres 16. `dev` waits for health, applies the generated migrations, and loads `seed` (departments plus `seed.users` when `seed_users: true`).
+- **Database.** `docker-compose.yml` runs Postgres 16. `dev` waits for health, applies the generated migrations, and loads the seed rows (the departments). `seed.users` are not inserted: they are compiled into `registry.ts` for the auth stub.
 - **Auth stub.** The stub is always emitted, so the output of `generate` never depends on `NODE_ENV` or any other environment. It is gated at runtime: Auth.js uses a credentials provider over `seed.users` only when `OWNINFRA_AUTH_STUB=1`, signing in as a seeded user with no password. Roles come from `seed.users[].roles`, the same claim shape Cognito groups will produce. Otherwise Auth.js uses the Cognito OIDC provider. `next.config` throws during `next build` when `OWNINFRA_AUTH_STUB` is set, and the auth module throws at startup when the stub is set and `NODE_ENV === "production"`, so a production artifact cannot carry an enabled stub.
 - **Workflow.** You can walk the full approvals flow by switching users: requester creates and submits, manager approves, finance approves and marks paid. Trying `manager_approve` as the requester returns 403 from the same guard that production uses.
 - **Audit log.** Every step above appears in the admin audit view, with before and after values.
@@ -199,7 +206,7 @@ No AWS account is needed for any of this.
 ## Decisions and tradeoffs
 
 - **Hand-written migrations over drizzle-kit.** This keeps `emit` pure and offline. The cost is owning a small SQL emitter.
-- **Tagged-template functions over Handlebars or EJS.** Templates are type-checked against the IR. The cost is that templates read as code, not markup.
+- **Static templates plus a generated registry over Handlebars or EJS.** Templates are ordinary TypeScript that `tsc` checks in the generated app. The cost is that the IR reaches the app as data (`registry.ts`), so a template that disagrees with the IR fails in the generated app's typecheck and tests, not in the compiler's.
 - **One audit helper over database triggers.** The actor is known, and the behavior is testable in unit tests. The cost is that a raw SQL write bypasses auditing, so the generated app exposes no raw SQL path.
 - **Dropping v1 fields at `parse`.** No partial support can leak in. The cost is that users see warnings for fields they wrote.
 
@@ -209,6 +216,8 @@ No AWS account is needed for any of this.
 - Prettier upgrades: the version stays pinned, and an upgrade is a dedicated PR that regenerates the goldens with `pnpm goldens:update`.
 
 ## Week 1 plan
+
+Done in #3 and #4.
 
 1. `Model` and `parse`, replacing `checkSemantics`, with the existing tests passing unchanged.
 2. `Ir` and `lower`, with unit tests on `policies` and `transitions` for the approvals example.
