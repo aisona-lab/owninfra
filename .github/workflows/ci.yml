@@ -22,6 +22,24 @@ jobs:
       - run: pnpm test
       - run: node packages/cli/dist/bin.js validate examples/approvals/blueprint.yaml
       - run: pnpm goldens:update && git diff --exit-code packages/compiler/test/golden
+  infra:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CDK_DISABLE_CLI_TELEMETRY: "true"
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile && pnpm build
+      - run: pnpm vitest run packages/constructs
+      - run: pnpm --filter @owninfra/constructs synth
+      - run: cmp packages/constructs/cdk.out/spend-approvals-dev.template.json packages/constructs/test/__snapshots__/spend-approvals-dev.template.json
   generated-app:
     runs-on: ubuntu-latest
     services:
