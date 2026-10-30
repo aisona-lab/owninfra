@@ -1,6 +1,7 @@
 import { App, Aws, Duration, Stack, Tags } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
@@ -16,12 +17,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
   Tags.of(stack).add(projectTag.key, projectTag.value);
 
   const vpc = new ec2.Vpc(stack, "Vpc", {
-    natGateways: 1,
-    subnetConfiguration: [
-      { name: "public", subnetType: ec2.SubnetType.PUBLIC },
-      { name: "app", subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-      { name: "db", subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    ],
+    subnetConfiguration: [{ name: "db", subnetType: ec2.SubnetType.PRIVATE_ISOLATED }],
   });
 
   const db = new rds.DatabaseCluster(stack, "Db", {
@@ -33,6 +29,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     defaultDatabaseName: model.app.name.replaceAll("-", "_"),
     storageEncrypted: true,
+    enableDataApi: true,
   });
 
   const userPool = new cognito.UserPool(stack, "Users", {
@@ -52,17 +49,21 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     code: lambda.Code.fromCfnParameters(),
     memorySize: 1024,
     timeout: Duration.seconds(30),
-    vpc,
-    vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     logGroup,
     environment: {
       NODE_ENV: "production",
+      DATABASE_CLUSTER_ARN: db.clusterArn,
       DATABASE_SECRET_ARN: db.secret!.secretArn,
       AUTH_COGNITO_ISSUER: `https://cognito-idp.${env.region}.amazonaws.com/${userPool.userPoolId}`,
     },
   });
-  db.secret!.grantRead(fn);
-  db.connections.allowDefaultPortFrom(fn);
+  fn.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ["rds-data:ExecuteStatement", "rds-data:BeginTransaction", "rds-data:CommitTransaction", "rds-data:RollbackTransaction"],
+      resources: [db.clusterArn],
+    }),
+  );
+  fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["secretsmanager:GetSecretValue"], resources: [db.secret!.secretArn] }));
   const url = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
 
   userPool.addClient("Web", {

@@ -21,17 +21,14 @@ const untaggable = [
   "AWS::Cognito::UserPoolClient",
   "AWS::Cognito::UserPoolDomain",
   "AWS::Cognito::UserPoolGroup",
-  "AWS::EC2::Route",
-  "AWS::EC2::SecurityGroupIngress",
   "AWS::EC2::SubnetRouteTableAssociation",
-  "AWS::EC2::VPCGatewayAttachment",
   "AWS::IAM::Policy",
   "AWS::Lambda::Permission",
   "AWS::Lambda::Url",
   "AWS::SecretsManager::SecretTargetAttachment",
 ];
 
-type Resource = { Type: string; Properties?: { Tags?: unknown; UserPoolTags?: unknown } };
+type Resource = { Type: string; Properties?: { Tags?: unknown; UserPoolTags?: unknown; ProvisionedConcurrencyConfig?: unknown; VpcEndpointType?: string } };
 const hasProjectTag = (r: Resource) => {
   const tags = r.Properties?.Tags ?? r.Properties?.UserPoolTags;
   if (Array.isArray(tags)) return tags.some((t) => t.Key === projectTag.key && t.Value === projectTag.value);
@@ -54,6 +51,18 @@ describe("approvals infrastructure", () => {
   it("tags every taggable resource with Project=owninfra", () => {
     const untagged = Object.values(template.Resources).filter((r) => !hasProjectTag(r)).map((r) => r.Type);
     expect([...new Set(untagged)].sort()).toEqual(untaggable);
+  });
+
+  it("has nothing that bills by the hour while idle", () => {
+    const hourly = Object.entries(template.Resources)
+      .filter(
+        ([, r]) =>
+          ["AWS::EC2::NatGateway", "AWS::EC2::Instance", "AWS::ECS::Service"].includes(r.Type) ||
+          r.Properties?.ProvisionedConcurrencyConfig !== undefined ||
+          (r.Type === "AWS::EC2::VPCEndpoint" && r.Properties?.VpcEndpointType === "Interface"),
+      )
+      .map(([id, r]) => `${id} ${r.Type}`);
+    expect(hourly).toEqual([]);
   });
 
   it("synthesizes the same bytes twice", () => {
