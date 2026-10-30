@@ -224,6 +224,20 @@ describe.each(Object.keys(drivers))("repository over %s", (driver) => {
     expect(new Set(rows.map((r: { id: string }) => r.id)).size).toBe(60);
     expect(rows.every((r: { description: string }) => r.description === big)).toBe(true);
   });
+
+  it("orders the audit log by the numeric id, newest first, and returns only the 200 newest", async () => {
+    const audit = (ids: string) =>
+      admin.unsafe(`insert into audit_events (id, actor, entity, entity_id, action) select g, 'admin@acme.example', 'Department', gen_random_uuid(), 'create' from ${ids} g`);
+    const ids = async () => (await repo.auditLog(users.admin)).map((r: { id: string }) => r.id);
+    await audit("unnest(array[99, 100, 101, 9007199254740993]::bigint[])");
+    expect(await ids()).toEqual(["9007199254740993", "101", "100", "99"]);
+    await audit("generate_series(1, 98)");
+    await audit("generate_series(102, 201)");
+    const newest = await ids();
+    expect(newest).toEqual(["9007199254740993", ...Array.from({ length: 199 }, (_, i) => String(201 - i))]);
+    expect(newest).not.toContain("1");
+    expect(newest).not.toContain("2");
+  });
 });
 
 describe("drivers return identical values", () => {
