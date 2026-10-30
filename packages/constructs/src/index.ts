@@ -11,6 +11,19 @@ import type { Construct } from "constructs";
 
 export const projectTag = { key: "Project", value: "owninfra" } as const;
 
+/** Aurora Serverless v2 pauses at 0 ACU after this long with no connections. Set explicitly (it equals the AWS default) so a test can pin it. */
+export const autoPause = Duration.minutes(5);
+
+/**
+ * The blueprint's auth.mfa drives the user pool. The second factor is TOTP only, which needs no SMS role.
+ * The schema declares no default for auth.mfa, so unset gets Cognito's own default: OFF.
+ */
+export function userPoolMfa(mfa: Model["auth"]["mfa"]): Pick<cognito.UserPoolProps, "mfa" | "mfaSecondFactor"> {
+  if (mfa === "required") return { mfa: cognito.Mfa.REQUIRED, mfaSecondFactor: { otp: true, sms: false } };
+  if (mfa === "optional") return { mfa: cognito.Mfa.OPTIONAL, mfaSecondFactor: { otp: true, sms: false } };
+  return { mfa: cognito.Mfa.OFF };
+}
+
 export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"): Stack {
   const env = model.environments[envName];
   if (!env) throw new Error(`blueprint has no '${envName}' environment`);
@@ -28,6 +41,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     engine: rds.DatabaseClusterEngine.auroraPostgres({ version: rds.AuroraPostgresEngineVersion.VER_16_11 }),
     writer: rds.ClusterInstance.serverlessV2("Writer"),
     serverlessV2MinCapacity: 0,
+    serverlessV2AutoPauseDuration: autoPause,
     serverlessV2MaxCapacity: 2,
     vpc,
     vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
@@ -35,6 +49,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     storageEncrypted: true,
     enableDataApi: true,
     iamAuthentication: true,
+    deletionProtection: env.deletionProtection ?? false,
   });
   Validations.of(db).acknowledge({
     id: "AwsSolutions-RDS10",
@@ -48,8 +63,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
   const userPool = new cognito.UserPool(stack, "Users", {
     selfSignUpEnabled: false,
     signInAliases: { email: true },
-    mfa: cognito.Mfa.OPTIONAL,
-    mfaSecondFactor: { otp: true, sms: false },
+    ...userPoolMfa(model.auth.mfa),
     passwordPolicy: { minLength: 12, requireLowercase: true, requireUppercase: true, requireDigits: true, requireSymbols: true },
     featurePlan: cognito.FeaturePlan.PLUS,
   });
