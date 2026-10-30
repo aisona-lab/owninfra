@@ -51,8 +51,22 @@ jobs:
           POSTGRES_DB: spend_approvals
         ports: ["5432:5432"]
         options: --health-cmd "pg_isready -U owninfra" --health-interval 2s --health-retries 30
+      # The RDS Data API emulator, so the repository suite also runs the generated app's Data API driver. Local only, no AWS.
+      data-api:
+        image: koxudaxi/local-data-api@sha256:98aeab6d1cef8b8ff2398d8d435cdd42f0bf3941b8aace021c174d569b8a3376 # 0.6.12
+        env:
+          ENGINE: PostgreSQLJDBC
+          POSTGRES_HOST: postgres
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: owninfra
+          POSTGRES_PASSWORD: owninfra
+          RESOURCE_ARN: arn:aws:rds:eu-north-1:000000000000:cluster:local
+          SECRET_ARN: arn:aws:secretsmanager:eu-north-1:000000000000:secret:local
+        ports: ["8080:80"]
     env:
       DATABASE_URL: postgres://owninfra:owninfra@localhost:5432/spend_approvals
+      REPO_TEST_DATABASE_URL: postgres://owninfra:owninfra@localhost:5432/repo_builder
+      DATA_API_ENDPOINT: http://localhost:8080
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -61,6 +75,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile && pnpm build
+      - run: psql postgres://owninfra:owninfra@localhost:5432/postgres -c "create database repo_builder"
       - run: pnpm test:pg
       - run: node packages/cli/dist/bin.js init --example approvals "$RUNNER_TEMP/approvals"
       - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate

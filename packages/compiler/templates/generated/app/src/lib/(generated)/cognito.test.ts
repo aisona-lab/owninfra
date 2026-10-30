@@ -1,0 +1,42 @@
+import { describe, expect, it } from "vitest";
+import { webClient } from "./cognito";
+
+type Input = { NextToken?: string; ClientId?: string };
+
+function fakeCognito(pages: { ClientName: string; ClientId: string }[][]) {
+  const seen: string[] = [];
+  const send = async (command: { constructor: { name: string }; input: Input }) => {
+    seen.push(command.constructor.name);
+    if (command.constructor.name === "ListUserPoolClientsCommand") {
+      const i = Number(command.input.NextToken ?? 0);
+      return { UserPoolClients: pages[i], NextToken: i + 1 < pages.length ? String(i + 1) : undefined };
+    }
+    return { UserPoolClient: { ClientId: command.input.ClientId, ClientSecret: `secret-of-${command.input.ClientId}` } };
+  };
+  return { client: { send } as never, seen };
+}
+
+describe("webClient", () => {
+  it("finds the named client across pages and reads its secret", async () => {
+    const { client, seen } = fakeCognito([[{ ClientName: "other", ClientId: "a" }], [{ ClientName: "web", ClientId: "b" }]]);
+    const web = await webClient("pool", "web", client);
+    expect(web).toMatchObject({ clientId: "b", clientSecret: "secret-of-b" });
+    expect(seen).toEqual(["ListUserPoolClientsCommand", "ListUserPoolClientsCommand", "DescribeUserPoolClientCommand"]);
+  });
+
+  it("derives a stable Auth.js secret that is not the client secret", async () => {
+    const a = await webClient("pool", "web", fakeCognito([[{ ClientName: "web", ClientId: "b" }]]).client);
+    const b = await webClient("pool", "web", fakeCognito([[{ ClientName: "web", ClientId: "b" }]]).client);
+    const c = await webClient("pool", "web", fakeCognito([[{ ClientName: "web", ClientId: "c" }]]).client);
+    expect(a.authSecret).toBe(b.authSecret);
+    expect(a.authSecret).not.toBe(c.authSecret);
+    expect(a.authSecret).not.toContain(a.clientSecret);
+    expect(a.authSecret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("refuses to guess when the name matches no client or several", async () => {
+    await expect(webClient("pool", "web", fakeCognito([[]]).client)).rejects.toThrow("found 0");
+    const two = fakeCognito([[{ ClientName: "web", ClientId: "a" }, { ClientName: "web", ClientId: "b" }]]);
+    await expect(webClient("pool", "web", two.client)).rejects.toThrow("found 2");
+  });
+});

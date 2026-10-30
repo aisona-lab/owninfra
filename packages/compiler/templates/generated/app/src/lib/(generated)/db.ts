@@ -29,7 +29,7 @@ export function tcp(sql: postgres.Sql | postgres.TransactionSql): Db {
   };
 }
 
-export function fromEnv(env: NodeJS.ProcessEnv): Db {
+export function fromEnv(env: Record<string, string | undefined>): Db {
   if (env.DATABASE_CLUSTER_ARN)
     return dataApi({ resourceArn: env.DATABASE_CLUSTER_ARN, secretArn: env.DATABASE_SECRET_ARN ?? "", database: env.DATABASE_NAME ?? "" });
   return tcp(

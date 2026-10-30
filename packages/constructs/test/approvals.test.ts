@@ -9,7 +9,7 @@ import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { describe, expect, it } from "vitest";
 import { validateBlueprintYaml } from "@owninfra/blueprint-schema";
-import { appStack, autoPause, newApp, projectTag, unrotatedSecretReason } from "../src/index.js";
+import { appStack, autoPause, defaultConcurrency, newApp, projectTag, unrotatedSecretReason } from "../src/index.js";
 
 const blueprint = readFileSync(new URL("../../../examples/approvals/blueprint.yaml", import.meta.url), "utf8");
 
@@ -20,7 +20,7 @@ function parse(yaml: string) {
 }
 
 type Resource = { Type: string; Properties?: Record<string, unknown> & { Tags?: unknown; UserPoolTags?: unknown } };
-type Template = { Resources: Record<string, Resource> };
+type Template = { Resources: Record<string, Resource>; Outputs?: Record<string, { Value: unknown }> };
 
 type SynthOptions = {
   yaml?: string;
@@ -273,5 +273,59 @@ describe("cdk-nag acknowledgements", () => {
   ])("COG2 with auth.mfa $mfa: acknowledged only when MFA is not required", ({ mfa, reason }) => {
     const { stack } = synth({ yaml: withMfa(mfa) });
     expect(acks(stack).find((a) => a.id === "AwsSolutions-COG2")?.reason).toBe(reason);
+  });
+});
+
+describe("app function wiring", () => {
+  const { raw, template } = synth();
+  const idOf = (type: string) => Object.entries(template.Resources).find(([, r]) => r.Type === type)![0];
+  const functionUrl = { "Fn::GetAtt": [idOf("AWS::Lambda::Url"), "FunctionUrl"] };
+
+  it("keeps the Cognito client secret out of the template, the function env and the outputs", () => {
+    expect(one(template, "AWS::Cognito::UserPoolClient").GenerateSecret).toBe(true);
+    expect(raw).not.toMatch(/ClientSecret/);
+    expect(JSON.stringify(one(template, "AWS::Lambda::Function").Environment)).not.toContain(idOf("AWS::Cognito::UserPoolClient"));
+  });
+
+  it("outputs the function URL, user pool id and client id, and nothing else", () => {
+    expect(template.Outputs).toEqual({
+      FunctionUrl: { Value: functionUrl },
+      UserPoolId: { Value: { Ref: idOf("AWS::Cognito::UserPool") } },
+      UserPoolClientId: { Value: { Ref: idOf("AWS::Cognito::UserPoolClient") } },
+    });
+  });
+
+  it("registers the function URL as the client's only callback", () => {
+    expect(one(template, "AWS::Cognito::UserPoolClient").CallbackURLs).toEqual([{ "Fn::Join": ["", [functionUrl, "api/auth/callback/cognito"]] }]);
+  });
+
+  it("gives the function what it needs to find its database and its Cognito client", () => {
+    const vars = (one(template, "AWS::Lambda::Function").Environment as { Variables: Record<string, unknown> }).Variables;
+    expect(vars).toMatchObject({ DATABASE_NAME: "spend_approvals", USER_POOL_ID: { Ref: idOf("AWS::Cognito::UserPool") }, USER_POOL_CLIENT_NAME: "web" });
+    expect(Object.keys(vars).sort()).toEqual(["AUTH_COGNITO_ISSUER", "DATABASE_CLUSTER_ARN", "DATABASE_NAME", "DATABASE_SECRET_ARN", "NODE_ENV", "USER_POOL_CLIENT_NAME", "USER_POOL_ID"]);
+    expect(one(template, "AWS::Cognito::UserPoolClient").ClientName).toBe("web");
+  });
+
+  it("lets the function read its user pool's clients and nothing else in Cognito", () => {
+    const statements = ofType(template, "AWS::IAM::Policy").flatMap((p) => (p.Properties!.PolicyDocument as { Statement: { Action: unknown; Resource: unknown }[] }).Statement);
+    expect(statements.filter((st) => JSON.stringify(st.Action).includes("cognito-idp"))).toEqual([
+      expect.objectContaining({ Action: ["cognito-idp:ListUserPoolClients", "cognito-idp:DescribeUserPoolClient"], Resource: { "Fn::GetAtt": [idOf("AWS::Cognito::UserPool"), "Arn"] } }),
+    ]);
+  });
+});
+
+describe("the public URL's concurrency cap follows the blueprint", () => {
+  const reserved = (t: Template) => one(t, "AWS::Lambda::Function").ReservedConcurrentExecutions;
+
+  it("is compute.max: 2 for dev and 4 for prod", () => {
+    expect(blueprint).toMatch(/dev:[\s\S]*?max: 2 }[\s\S]*prod:[\s\S]*?max: 4 }/);
+    expect(reserved(synth().template)).toBe(2);
+    expect(reserved(synth({ envName: "prod" }).template)).toBe(4);
+  });
+
+  it(`defaults to ${defaultConcurrency} when the environment has no compute block`, () => {
+    const yaml = blueprint.replace("    compute: { cpu: 512, memory: 1024, desired: 1, max: 2 }\n", "");
+    expect(yaml).not.toBe(blueprint);
+    expect(reserved(synth({ yaml }).template)).toBe(defaultConcurrency);
   });
 });
