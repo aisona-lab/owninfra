@@ -1,6 +1,8 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as iam from "aws-cdk-lib/aws-iam";
+import type { Stack } from "aws-cdk-lib";
 import { describe, expect, it } from "vitest";
 import { validateBlueprintYaml } from "@owninfra/blueprint-schema";
 import { appStack, newApp, projectTag } from "../src/index.js";
@@ -9,10 +11,11 @@ const r = validateBlueprintYaml(readFileSync(new URL("../../../examples/approval
 if (!r.ok) throw new Error(JSON.stringify(r.errors));
 const model = r.model;
 
-function synth() {
+function synth(extend?: (stack: Stack) => void) {
   const outdir = mkdtempSync(join(tmpdir(), "owninfra-cdk-"));
   const app = newApp(outdir);
   const stack = appStack(app, model, "dev");
+  extend?.(stack);
   const assembly = app.synth();
   return { stack, assembly, raw: readFileSync(join(outdir, stack.templateFile), "utf8") };
 }
@@ -58,5 +61,12 @@ describe("approvals infrastructure", () => {
 
   it("synthesizes the same bytes twice", () => {
     expect(synth().raw).toBe(raw);
+  });
+
+  it("fails synthesis when a construct breaks an AwsSolutions rule", () => {
+    const wildcard = new iam.PolicyDocument({ statements: [new iam.PolicyStatement({ actions: ["*"], resources: ["*"] })] });
+    expect(() =>
+      synth((s) => new iam.Role(s, "Admin", { assumedBy: new iam.AccountRootPrincipal(), inlinePolicies: { all: wildcard } })),
+    ).toThrow(/AwsSolutions-IAM5\[Action::\*\]/);
   });
 });

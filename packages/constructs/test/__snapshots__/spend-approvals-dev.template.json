@@ -1,5 +1,19 @@
 {
  "Resources": {
+  "FlowLogs16C1943A": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "RetentionInDays": 30,
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain"
+  },
   "Vpc8378EB38": {
    "Type": "AWS::EC2::VPC",
    "Properties": {
@@ -533,6 +547,93 @@
     }
    }
   },
+  "VpcallIAMRole2920156A": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "vpc-flow-logs.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/all"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   }
+  },
+  "VpcallIAMRoleDefaultPolicy74D10B9F": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "FlowLogs16C1943A",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "VpcallIAMRoleDefaultPolicy74D10B9F",
+    "Roles": [
+     {
+      "Ref": "VpcallIAMRole2920156A"
+     }
+    ]
+   }
+  },
+  "VpcallFlowLogF5ACEAEC": {
+   "Type": "AWS::EC2::FlowLog",
+   "Properties": {
+    "DeliverLogsPermissionArn": {
+     "Fn::GetAtt": [
+      "VpcallIAMRole2920156A",
+      "Arn"
+     ]
+    },
+    "LogDestinationType": "cloud-watch-logs",
+    "LogGroupName": {
+     "Ref": "FlowLogs16C1943A"
+    },
+    "ResourceId": {
+     "Ref": "Vpc8378EB38"
+    },
+    "ResourceType": "VPC",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/all"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "TrafficType": "ALL"
+   }
+  },
   "DbSubnets93851898": {
    "Type": "AWS::RDS::DBSubnetGroup",
    "Properties": {
@@ -657,6 +758,7 @@
      "Ref": "DbSubnets93851898"
     },
     "DatabaseName": "spend_approvals",
+    "EnableIAMDatabaseAuthentication": true,
     "Engine": "aurora-postgresql",
     "EngineVersion": "16.11",
     "MasterUserPassword": {
@@ -758,10 +860,20 @@
      "SOFTWARE_TOKEN_MFA"
     ],
     "MfaConfiguration": "OPTIONAL",
+    "Policies": {
+     "PasswordPolicy": {
+      "MinimumLength": 12,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": true,
+      "RequireUppercase": true
+     }
+    },
     "SmsVerificationMessage": "The verification code to your new account is {####}",
     "UserPoolTags": {
      "Project": "owninfra"
     },
+    "UserPoolTier": "PLUS",
     "UsernameAttributes": [
      "email"
     ],
@@ -881,7 +993,7 @@
    "UpdateReplacePolicy": "Retain",
    "DeletionPolicy": "Retain"
   },
-  "AppServiceRole6E5ED15C": {
+  "AppRoleDC883459": {
    "Type": "AWS::IAM::Role",
    "Properties": {
     "AssumeRolePolicyDocument": {
@@ -896,51 +1008,43 @@
      ],
      "Version": "2012-10-17"
     },
-    "ManagedPolicyArns": [
-     {
-      "Fn::Join": [
-       "",
-       [
-        "arn:",
-        {
-         "Ref": "AWS::Partition"
-        },
-        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-       ]
-      ]
-     },
-     {
-      "Fn::Join": [
-       "",
-       [
-        "arn:",
-        {
-         "Ref": "AWS::Partition"
-        },
-        ":iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
-       ]
-      ]
-     }
-    ],
     "Tags": [
      {
       "Key": "Project",
       "Value": "owninfra"
      }
     ]
-   },
-   "DependsOn": [
-    "VpcappSubnet1DefaultRoute64294A8F",
-    "VpcappSubnet1RouteTableAssociation168BF781",
-    "VpcappSubnet2DefaultRouteEBCCC1EA",
-    "VpcappSubnet2RouteTableAssociation81E96A75"
-   ]
+   }
   },
-  "AppServiceRoleDefaultPolicyAED90052": {
+  "AppRoleDefaultPolicy1872B475": {
    "Type": "AWS::IAM::Policy",
    "Properties": {
     "PolicyDocument": {
      "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "AppLogsC5DF83A6",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "ec2:CreateNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DeleteNetworkInterface",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:UnassignPrivateIpAddresses"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
       {
        "Action": [
         "secretsmanager:GetSecretValue",
@@ -954,19 +1058,13 @@
      ],
      "Version": "2012-10-17"
     },
-    "PolicyName": "AppServiceRoleDefaultPolicyAED90052",
+    "PolicyName": "AppRoleDefaultPolicy1872B475",
     "Roles": [
      {
-      "Ref": "AppServiceRole6E5ED15C"
+      "Ref": "AppRoleDC883459"
      }
     ]
-   },
-   "DependsOn": [
-    "VpcappSubnet1DefaultRoute64294A8F",
-    "VpcappSubnet1RouteTableAssociation168BF781",
-    "VpcappSubnet2DefaultRouteEBCCC1EA",
-    "VpcappSubnet2RouteTableAssociation81E96A75"
-   ]
+   }
   },
   "AppSecurityGroupC292657D": {
    "Type": "AWS::EC2::SecurityGroup",
@@ -1035,7 +1133,7 @@
     "MemorySize": 1024,
     "Role": {
      "Fn::GetAtt": [
-      "AppServiceRole6E5ED15C",
+      "AppRoleDC883459",
       "Arn"
      ]
     },
@@ -1067,8 +1165,8 @@
     }
    },
    "DependsOn": [
-    "AppServiceRoleDefaultPolicyAED90052",
-    "AppServiceRole6E5ED15C",
+    "AppRoleDefaultPolicy1872B475",
+    "AppRoleDC883459",
     "VpcappSubnet1DefaultRoute64294A8F",
     "VpcappSubnet1RouteTableAssociation168BF781",
     "VpcappSubnet2DefaultRouteEBCCC1EA",
