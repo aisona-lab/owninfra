@@ -343,6 +343,7 @@
      "Ref": "DbSubnets93851898"
     },
     "DatabaseName": "spend_approvals",
+    "DeletionProtection": false,
     "EnableHttpEndpoint": true,
     "EnableIAMDatabaseAuthentication": true,
     "Engine": "aurora-postgresql",
@@ -374,7 +375,8 @@
     "Port": 5432,
     "ServerlessV2ScalingConfiguration": {
      "MaxCapacity": 2,
-     "MinCapacity": 0
+     "MinCapacity": 0,
+     "SecondsUntilAutoPause": 300
     },
     "StorageEncrypted": true,
     "Tags": [

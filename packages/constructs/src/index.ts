@@ -1,15 +1,62 @@
-import { App, Aws, Duration, Stack, Tags, Validations } from "aws-cdk-lib";
+import { App, Aspects, Aws, Duration, type IAspect, Stack, Tags, Validations } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { AwsSolutionsChecks } from "cdk-nag";
 import type { Model } from "@owninfra/blueprint-schema";
-import type { Construct } from "constructs";
+import type { Construct, IConstruct } from "constructs";
 
 export const projectTag = { key: "Project", value: "owninfra" } as const;
+
+/** Aurora Serverless v2 pauses at 0 ACU after this long with no connections. Set explicitly (it equals the AWS default) so a test can pin it. */
+export const autoPause = Duration.minutes(5);
+
+/**
+ * The blueprint's auth.mfa drives the user pool. The second factor is TOTP only, which needs no SMS role.
+ * The schema declares no default for auth.mfa, so unset gets Cognito's own default: OFF.
+ */
+export function userPoolMfa(mfa: Model["auth"]["mfa"]): Pick<cognito.UserPoolProps, "mfa" | "mfaSecondFactor"> {
+  if (mfa === "required") return { mfa: cognito.Mfa.REQUIRED, mfaSecondFactor: { otp: true, sms: false } };
+  if (mfa === "optional") return { mfa: cognito.Mfa.OPTIONAL, mfaSecondFactor: { otp: true, sms: false } };
+  return { mfa: cognito.Mfa.OFF };
+}
+
+function unprotectedReason(envName: string, value: boolean | undefined): string {
+  const setting = `environments.${envName}.database.deletion_protection`;
+  const why =
+    value === false
+      ? `The blueprint sets ${setting} to false`
+      : `The blueprint leaves ${setting} unset and the schema has no default, so the stack uses CloudFormation's default`;
+  return `${why}: this ${envName} cluster has DeletionProtection off, so deleting the stack deletes it. Its DeletionPolicy is Snapshot (the CDK default; the blueprint's removal_policy is not wired yet), so CloudFormation takes a final snapshot first.`;
+}
+
+function mfaNotRequiredReason(mfa: Model["auth"]["mfa"]): string {
+  if (mfa === "optional")
+    return "The blueprint sets auth.mfa to optional, so MfaConfiguration is OPTIONAL: users can enroll TOTP but are not made to. auth.mfa: required sets it to ON and removes this acknowledgement.";
+  if (mfa === "off") return "The blueprint sets auth.mfa to off, so MfaConfiguration is OFF. auth.mfa: required sets it to ON and removes this acknowledgement.";
+  return "The blueprint leaves auth.mfa unset and the schema has no default, so MfaConfiguration is OFF (Cognito's default). auth.mfa: required sets it to ON and removes this acknowledgement.";
+}
+
+export const unrotatedSecretReason =
+  "No rotation schedule. Rotating this CDK-generated secret needs a rotation Lambda that reaches both the database and Secrets Manager; the cluster is in isolated subnets with no NAT or Secrets Manager interface endpoint (both bill hourly), so such a Lambda has no path. RDS-managed master password rotation (ManageMasterUserPassword) needs no Lambda, but the AWS docs do not say whether the Data API accepts an RDS-managed secret (unconfirmed), and the app does not use the Data API yet (it still connects with postgres.js over TCP), so the secret has not been switched.";
+
+/** Acknowledges AwsSolutions-SMG4 only on secrets that no rotation schedule targets, so adding rotation removes the acknowledgement. */
+class AcknowledgeUnrotatedSecrets implements IAspect {
+  visit(node: IConstruct): void {
+    if (!(node instanceof secretsmanager.CfnSecret)) return;
+    const stack = Stack.of(node);
+    const refOf = (v: unknown) => (stack.resolve(v) as { Ref?: string } | undefined)?.Ref;
+    const all = stack.node.findAll();
+    const ids = new Set([refOf(node.ref)]);
+    for (const c of all) if (c instanceof secretsmanager.CfnSecretTargetAttachment && ids.has(refOf(c.secretId))) ids.add(refOf(c.ref));
+    if (all.some((c) => c instanceof secretsmanager.CfnRotationSchedule && ids.has(refOf(c.secretId)))) return;
+    Validations.of(node).acknowledge({ id: "AwsSolutions-SMG4", reason: unrotatedSecretReason });
+  }
+}
 
 export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"): Stack {
   const env = model.environments[envName];
@@ -28,6 +75,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     engine: rds.DatabaseClusterEngine.auroraPostgres({ version: rds.AuroraPostgresEngineVersion.VER_16_11 }),
     writer: rds.ClusterInstance.serverlessV2("Writer"),
     serverlessV2MinCapacity: 0,
+    serverlessV2AutoPauseDuration: autoPause,
     serverlessV2MaxCapacity: 2,
     vpc,
     vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
@@ -35,28 +83,19 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     storageEncrypted: true,
     enableDataApi: true,
     iamAuthentication: true,
+    deletionProtection: env.deletionProtection ?? false,
   });
-  Validations.of(db).acknowledge({
-    id: "AwsSolutions-RDS10",
-    reason: "Dev database: `owninfra destroy` must be able to delete it. The cluster keeps the default SNAPSHOT removal policy, so a final snapshot survives a destroy.",
-  });
-  Validations.of(db.node.findChild("Secret")).acknowledge({
-    id: "AwsSolutions-SMG4",
-    reason: "Rotation needs a rotation Lambda inside the VPC that can reach Secrets Manager, which from the isolated database subnets means NAT or an interface endpoint, both billed hourly. The app reads the secret through the Data API on each call, so rotation is safe to add once the stack has such a path.",
-  });
+  if (!(env.deletionProtection ?? false)) Validations.of(db).acknowledge({ id: "AwsSolutions-RDS10", reason: unprotectedReason(envName, env.deletionProtection) });
+  Aspects.of(stack).add(new AcknowledgeUnrotatedSecrets());
 
   const userPool = new cognito.UserPool(stack, "Users", {
     selfSignUpEnabled: false,
     signInAliases: { email: true },
-    mfa: cognito.Mfa.OPTIONAL,
-    mfaSecondFactor: { otp: true, sms: false },
+    ...userPoolMfa(model.auth.mfa),
     passwordPolicy: { minLength: 12, requireLowercase: true, requireUppercase: true, requireDigits: true, requireSymbols: true },
     featurePlan: cognito.FeaturePlan.PLUS,
   });
-  Validations.of(userPool).acknowledge({
-    id: "AwsSolutions-COG2",
-    reason: "The approvals blueprint sets auth.mfa to optional: users can enroll TOTP, and requiring it is a blueprint decision, not an infra default.",
-  });
+  if (model.auth.mfa !== "required") Validations.of(userPool).acknowledge({ id: "AwsSolutions-COG2", reason: mfaNotRequiredReason(model.auth.mfa) });
   for (const role of model.roles.keys()) new cognito.CfnUserPoolGroup(stack, `Role-${role}`, { userPoolId: userPool.userPoolId, groupName: role });
   userPool.addDomain("Domain", { cognitoDomain: { domainPrefix: `${model.app.name}-${envName}-${Aws.ACCOUNT_ID}` } });
 
