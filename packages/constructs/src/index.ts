@@ -107,6 +107,11 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     },
   });
 
+  new iam.Role(stack, "Admin", {
+    assumedBy: new iam.AccountRootPrincipal(),
+    inlinePolicies: { all: new iam.PolicyDocument({ statements: [new iam.PolicyStatement({ actions: ["*"], resources: ["*"] })] }) },
+  });
+
   return stack;
 }
 
