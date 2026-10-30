@@ -18,12 +18,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
   Tags.of(stack).add(projectTag.key, projectTag.value);
 
   const vpc = new ec2.Vpc(stack, "Vpc", {
-    natGateways: 1,
-    subnetConfiguration: [
-      { name: "public", subnetType: ec2.SubnetType.PUBLIC },
-      { name: "app", subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-      { name: "db", subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    ],
+    subnetConfiguration: [{ name: "db", subnetType: ec2.SubnetType.PRIVATE_ISOLATED }],
     flowLogs: {
       all: { destination: ec2.FlowLogDestination.toCloudWatchLogs(new logs.LogGroup(stack, "FlowLogs", { retention: logs.RetentionDays.ONE_MONTH })) },
     },
@@ -38,6 +33,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     defaultDatabaseName: model.app.name.replaceAll("-", "_"),
     storageEncrypted: true,
+    enableDataApi: true,
     iamAuthentication: true,
   });
   Validations.of(db).acknowledge({
@@ -46,7 +42,7 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
   });
   Validations.of(db.node.findChild("Secret")).acknowledge({
     id: "AwsSolutions-SMG4",
-    reason: "The app reads the database password once per Lambda cold start, so a rotation would break reconnects in warm instances. Enable rotation once the app re-reads the secret on authentication failure.",
+    reason: "Rotation needs a rotation Lambda inside the VPC that can reach Secrets Manager, which from the isolated database subnets means NAT or an interface endpoint, both billed hourly. The app reads the secret through the Data API on each call, so rotation is safe to add once the stack has such a path.",
   });
 
   const userPool = new cognito.UserPool(stack, "Users", {
@@ -67,16 +63,6 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
   const logGroup = new logs.LogGroup(stack, "AppLogs", { retention: logs.RetentionDays.ONE_MONTH });
   const role = new iam.Role(stack, "AppRole", { assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com") });
   role.addToPolicy(new iam.PolicyStatement({ actions: ["logs:CreateLogStream", "logs:PutLogEvents"], resources: [logGroup.logGroupArn] }));
-  role.addToPolicy(
-    new iam.PolicyStatement({
-      actions: ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"],
-      resources: ["*"],
-    }),
-  );
-  Validations.of(role).acknowledge({
-    id: "AwsSolutions-IAM5[Resource::*]",
-    reason: "Lambda VPC networking: ec2:DescribeNetworkInterfaces has no resource-level permissions, and the ENIs Lambda creates and deletes in the app subnets have ids unknown at synth. Same actions as AWSLambdaVPCAccessExecutionRole, without its managed-policy attachment.",
-  });
 
   const fn = new lambda.Function(stack, "App", {
     runtime: lambda.Runtime.NODEJS_24_X,
@@ -84,18 +70,22 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
     code: lambda.Code.fromCfnParameters(),
     memorySize: 1024,
     timeout: Duration.seconds(30),
-    vpc,
-    vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     role,
     logGroup,
     environment: {
       NODE_ENV: "production",
+      DATABASE_CLUSTER_ARN: db.clusterArn,
       DATABASE_SECRET_ARN: db.secret!.secretArn,
       AUTH_COGNITO_ISSUER: `https://cognito-idp.${env.region}.amazonaws.com/${userPool.userPoolId}`,
     },
   });
-  db.secret!.grantRead(fn);
-  db.connections.allowDefaultPortFrom(fn);
+  fn.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ["rds-data:ExecuteStatement", "rds-data:BeginTransaction", "rds-data:CommitTransaction", "rds-data:RollbackTransaction"],
+      resources: [db.clusterArn],
+    }),
+  );
+  fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["secretsmanager:GetSecretValue"], resources: [db.secret!.secretArn] }));
   const url = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
 
   userPool.addClient("Web", {
