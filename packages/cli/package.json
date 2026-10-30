@@ -3,8 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": { "owninfra": "dist/bin.js" },
+  "bin": {
+    "owninfra": "dist/bin.js"
+  },
   "main": "dist/index.js",
-  "scripts": { "build": "tsc -b" },
-  "dependencies": { "@owninfra/blueprint-schema": "workspace:*" }
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@owninfra/blueprint-schema": "workspace:*",
+    "@owninfra/compiler": "workspace:*"
+  }
 }

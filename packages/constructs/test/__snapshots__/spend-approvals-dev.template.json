@@ -1,0 +1,828 @@
+{
+ "Resources": {
+  "FlowLogs16C1943A": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "RetentionInDays": 30,
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain"
+  },
+  "Vpc8378EB38": {
+   "Type": "AWS::EC2::VPC",
+   "Properties": {
+    "CidrBlock": "10.0.0.0/16",
+    "EnableDnsHostnames": true,
+    "EnableDnsSupport": true,
+    "InstanceTenancy": "default",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   }
+  },
+  "VpcdbSubnet1Subnet1B82B149": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": {
+     "Fn::Select": [
+      0,
+      {
+       "Fn::GetAZs": ""
+      }
+     ]
+    },
+    "CidrBlock": "10.0.0.0/17",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "db"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Isolated"
+     },
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/dbSubnet1"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   }
+  },
+  "VpcdbSubnet1RouteTable04184FDD": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/dbSubnet1"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   }
+  },
+  "VpcdbSubnet1RouteTableAssociation3FF66701": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcdbSubnet1RouteTable04184FDD"
+    },
+    "SubnetId": {
+     "Ref": "VpcdbSubnet1Subnet1B82B149"
+    }
+   }
+  },
+  "VpcdbSubnet2Subnet01192A3B": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": {
+     "Fn::Select": [
+      1,
+      {
+       "Fn::GetAZs": ""
+      }
+     ]
+    },
+    "CidrBlock": "10.0.128.0/17",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "db"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Isolated"
+     },
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/dbSubnet2"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   }
+  },
+  "VpcdbSubnet2RouteTable7BBEF14D": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/dbSubnet2"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   }
+  },
+  "VpcdbSubnet2RouteTableAssociation3D000840": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "VpcdbSubnet2RouteTable7BBEF14D"
+    },
+    "SubnetId": {
+     "Ref": "VpcdbSubnet2Subnet01192A3B"
+    }
+   }
+  },
+  "VpcallIAMRole2920156A": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "vpc-flow-logs.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/all"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   }
+  },
+  "VpcallIAMRoleDefaultPolicy74D10B9F": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "FlowLogs16C1943A",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "VpcallIAMRoleDefaultPolicy74D10B9F",
+    "Roles": [
+     {
+      "Ref": "VpcallIAMRole2920156A"
+     }
+    ]
+   }
+  },
+  "VpcallFlowLogF5ACEAEC": {
+   "Type": "AWS::EC2::FlowLog",
+   "Properties": {
+    "DeliverLogsPermissionArn": {
+     "Fn::GetAtt": [
+      "VpcallIAMRole2920156A",
+      "Arn"
+     ]
+    },
+    "LogDestinationType": "cloud-watch-logs",
+    "LogGroupName": {
+     "Ref": "FlowLogs16C1943A"
+    },
+    "ResourceId": {
+     "Ref": "Vpc8378EB38"
+    },
+    "ResourceType": "VPC",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "spend-approvals-dev/Vpc/all"
+     },
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "TrafficType": "ALL"
+   }
+  },
+  "DbSubnets93851898": {
+   "Type": "AWS::RDS::DBSubnetGroup",
+   "Properties": {
+    "DBSubnetGroupDescription": "Subnets for Db database",
+    "SubnetIds": [
+     {
+      "Ref": "VpcdbSubnet1Subnet1B82B149"
+     },
+     {
+      "Ref": "VpcdbSubnet2Subnet01192A3B"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   }
+  },
+  "DbSecurityGroupC34ABFAB": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "RDS security group",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Vpc8378EB38"
+    }
+   }
+  },
+  "DbSecretCF6D79B0": {
+   "Type": "AWS::SecretsManager::Secret",
+   "Properties": {
+    "Description": {
+     "Fn::Join": [
+      "",
+      [
+       "Generated by the CDK for stack: ",
+       {
+        "Ref": "AWS::StackName"
+       }
+      ]
+     ]
+    },
+    "GenerateSecretString": {
+     "ExcludeCharacters": " %+~`#$&*()|[]{}:;<>?!'/@\"\\",
+     "GenerateStringKey": "password",
+     "PasswordLength": 30,
+     "SecretStringTemplate": "{\"username\":\"postgres\"}"
+    },
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete"
+  },
+  "DbSecretAttachment7AED447C": {
+   "Type": "AWS::SecretsManager::SecretTargetAttachment",
+   "Properties": {
+    "SecretId": {
+     "Ref": "DbSecretCF6D79B0"
+    },
+    "TargetId": {
+     "Ref": "Db5D02A0A9"
+    },
+    "TargetType": "AWS::RDS::DBCluster"
+   }
+  },
+  "Db5D02A0A9": {
+   "Type": "AWS::RDS::DBCluster",
+   "Properties": {
+    "CopyTagsToSnapshot": true,
+    "DBClusterParameterGroupName": "default.aurora-postgresql16",
+    "DBSubnetGroupName": {
+     "Ref": "DbSubnets93851898"
+    },
+    "DatabaseName": "spend_approvals",
+    "DeletionProtection": false,
+    "EnableHttpEndpoint": true,
+    "EnableIAMDatabaseAuthentication": true,
+    "Engine": "aurora-postgresql",
+    "EngineVersion": "16.11",
+    "MasterUserPassword": {
+     "Fn::Join": [
+      "",
+      [
+       "{{resolve:secretsmanager:",
+       {
+        "Ref": "DbSecretCF6D79B0"
+       },
+       ":SecretString:password::}}"
+      ]
+     ]
+    },
+    "MasterUsername": {
+     "Fn::Join": [
+      "",
+      [
+       "{{resolve:secretsmanager:",
+       {
+        "Ref": "DbSecretCF6D79B0"
+       },
+       ":SecretString:username::}}"
+      ]
+     ]
+    },
+    "Port": 5432,
+    "ServerlessV2ScalingConfiguration": {
+     "MaxCapacity": 2,
+     "MinCapacity": 0,
+     "SecondsUntilAutoPause": 300
+    },
+    "StorageEncrypted": true,
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "VpcSecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "DbSecurityGroupC34ABFAB",
+       "GroupId"
+      ]
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Snapshot",
+   "DeletionPolicy": "Snapshot"
+  },
+  "DbWriter9BD1608D": {
+   "Type": "AWS::RDS::DBInstance",
+   "Properties": {
+    "DBClusterIdentifier": {
+     "Ref": "Db5D02A0A9"
+    },
+    "DBInstanceClass": "db.serverless",
+    "Engine": "aurora-postgresql",
+    "PromotionTier": 0,
+    "PubliclyAccessible": false,
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   },
+   "DependsOn": [
+    "VpcdbSubnet1RouteTableAssociation3FF66701",
+    "VpcdbSubnet2RouteTableAssociation3D000840"
+   ],
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete"
+  },
+  "Users0A0EEA89": {
+   "Type": "AWS::Cognito::UserPool",
+   "Properties": {
+    "AccountRecoverySetting": {
+     "RecoveryMechanisms": [
+      {
+       "Name": "verified_phone_number",
+       "Priority": 1
+      },
+      {
+       "Name": "verified_email",
+       "Priority": 2
+      }
+     ]
+    },
+    "AdminCreateUserConfig": {
+     "AllowAdminCreateUserOnly": true
+    },
+    "AutoVerifiedAttributes": [
+     "email"
+    ],
+    "EmailVerificationMessage": "The verification code to your new account is {####}",
+    "EmailVerificationSubject": "Verify your new account",
+    "EnabledMfas": [
+     "SOFTWARE_TOKEN_MFA"
+    ],
+    "MfaConfiguration": "OPTIONAL",
+    "Policies": {
+     "PasswordPolicy": {
+      "MinimumLength": 12,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": true,
+      "RequireUppercase": true
+     }
+    },
+    "SmsVerificationMessage": "The verification code to your new account is {####}",
+    "UserPoolTags": {
+     "Project": "owninfra"
+    },
+    "UserPoolTier": "PLUS",
+    "UsernameAttributes": [
+     "email"
+    ],
+    "VerificationMessageTemplate": {
+     "DefaultEmailOption": "CONFIRM_WITH_CODE",
+     "EmailMessage": "The verification code to your new account is {####}",
+     "EmailSubject": "Verify your new account",
+     "SmsMessage": "The verification code to your new account is {####}"
+    }
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain"
+  },
+  "UsersDomainC6632324": {
+   "Type": "AWS::Cognito::UserPoolDomain",
+   "Properties": {
+    "Domain": {
+     "Fn::Join": [
+      "",
+      [
+       "spend-approvals-dev-",
+       {
+        "Ref": "AWS::AccountId"
+       }
+      ]
+     ]
+    },
+    "UserPoolId": {
+     "Ref": "Users0A0EEA89"
+    }
+   }
+  },
+  "UsersWebA39D1A70": {
+   "Type": "AWS::Cognito::UserPoolClient",
+   "Properties": {
+    "AllowedOAuthFlows": [
+     "code"
+    ],
+    "AllowedOAuthFlowsUserPoolClient": true,
+    "AllowedOAuthScopes": [
+     "openid",
+     "email",
+     "profile"
+    ],
+    "CallbackURLs": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        {
+         "Fn::GetAtt": [
+          "AppFunctionUrl903A073C",
+          "FunctionUrl"
+         ]
+        },
+        "api/auth/callback/cognito"
+       ]
+      ]
+     }
+    ],
+    "GenerateSecret": true,
+    "SupportedIdentityProviders": [
+     "COGNITO"
+    ],
+    "UserPoolId": {
+     "Ref": "Users0A0EEA89"
+    }
+   }
+  },
+  "Rolerequester": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "GroupName": "requester",
+    "UserPoolId": {
+     "Ref": "Users0A0EEA89"
+    }
+   }
+  },
+  "Rolemanager": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "GroupName": "manager",
+    "UserPoolId": {
+     "Ref": "Users0A0EEA89"
+    }
+   }
+  },
+  "Rolefinance": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "GroupName": "finance",
+    "UserPoolId": {
+     "Ref": "Users0A0EEA89"
+    }
+   }
+  },
+  "Roleadmin": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "GroupName": "admin",
+    "UserPoolId": {
+     "Ref": "Users0A0EEA89"
+    }
+   }
+  },
+  "AppLogsC5DF83A6": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "RetentionInDays": 30,
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain"
+  },
+  "AppRoleDC883459": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ]
+   }
+  },
+  "AppRoleDefaultPolicy1872B475": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "AppLogsC5DF83A6",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "rds-data:ExecuteStatement",
+        "rds-data:BeginTransaction",
+        "rds-data:CommitTransaction",
+        "rds-data:RollbackTransaction"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          "arn:",
+          {
+           "Ref": "AWS::Partition"
+          },
+          ":rds:eu-north-1:",
+          {
+           "Ref": "AWS::AccountId"
+          },
+          ":cluster:",
+          {
+           "Ref": "Db5D02A0A9"
+          }
+         ]
+        ]
+       }
+      },
+      {
+       "Action": "secretsmanager:GetSecretValue",
+       "Effect": "Allow",
+       "Resource": {
+        "Ref": "DbSecretAttachment7AED447C"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "AppRoleDefaultPolicy1872B475",
+    "Roles": [
+     {
+      "Ref": "AppRoleDC883459"
+     }
+    ]
+   }
+  },
+  "AppF1B96344": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": {
+      "Ref": "AppLambdaSourceBucketNameParameterCF2AF1BD"
+     },
+     "S3Key": {
+      "Ref": "AppLambdaSourceObjectKeyParameter3C4B5EC3"
+     }
+    },
+    "Environment": {
+     "Variables": {
+      "NODE_ENV": "production",
+      "DATABASE_CLUSTER_ARN": {
+       "Fn::Join": [
+        "",
+        [
+         "arn:",
+         {
+          "Ref": "AWS::Partition"
+         },
+         ":rds:eu-north-1:",
+         {
+          "Ref": "AWS::AccountId"
+         },
+         ":cluster:",
+         {
+          "Ref": "Db5D02A0A9"
+         }
+        ]
+       ]
+      },
+      "DATABASE_SECRET_ARN": {
+       "Ref": "DbSecretAttachment7AED447C"
+      },
+      "AUTH_COGNITO_ISSUER": {
+       "Fn::Join": [
+        "",
+        [
+         "https://cognito-idp.eu-north-1.amazonaws.com/",
+         {
+          "Ref": "Users0A0EEA89"
+         }
+        ]
+       ]
+      }
+     }
+    },
+    "Handler": "index.handler",
+    "LoggingConfig": {
+     "LogGroup": {
+      "Ref": "AppLogsC5DF83A6"
+     }
+    },
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "AppRoleDC883459",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs24.x",
+    "Tags": [
+     {
+      "Key": "Project",
+      "Value": "owninfra"
+     }
+    ],
+    "Timeout": 30
+   },
+   "DependsOn": [
+    "AppRoleDefaultPolicy1872B475",
+    "AppRoleDC883459"
+   ]
+  },
+  "AppFunctionUrl903A073C": {
+   "Type": "AWS::Lambda::Url",
+   "Properties": {
+    "AuthType": "NONE",
+    "TargetFunctionArn": {
+     "Fn::GetAtt": [
+      "AppF1B96344",
+      "Arn"
+     ]
+    }
+   }
+  },
+  "Appinvokefunctionurl8F2366B1": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunctionUrl",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "AppF1B96344",
+      "Arn"
+     ]
+    },
+    "FunctionUrlAuthType": "NONE",
+    "Principal": "*"
+   }
+  },
+  "Appinvokefunction16AF84A2": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "AppF1B96344",
+      "Arn"
+     ]
+    },
+    "InvokedViaFunctionUrl": true,
+    "Principal": "*"
+   }
+  }
+ },
+ "Parameters": {
+  "AppLambdaSourceBucketNameParameterCF2AF1BD": {
+   "Type": "String"
+  },
+  "AppLambdaSourceObjectKeyParameter3C4B5EC3": {
+   "Type": "String"
+  },
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

@@ -2,3 +2,5 @@ node_modules/
 dist/
 *.tsbuildinfo
 coverage/
+packages/compiler/src/static-templates.ts
+cdk.out/

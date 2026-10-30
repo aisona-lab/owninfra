@@ -137,11 +137,13 @@ seed:
     - { email: "requester@acme.example", roles: [requester] }
     - { email: "manager@acme.example", roles: [manager] }
     - { email: "finance@acme.example", roles: [finance] }
+    - { email: "admin@acme.example", roles: [admin] }
+    - { email: "lead@acme.example", roles: [requester, manager] }   # separation_of_duties: no puede aprobar lo suyo
 
 infra:
   iac: cdk
   compute: fargate                 # MVP: solo fargate
-  region_default: eu-central-1
+  region_default: eu-north-1
   network:
     exposure: cloudfront_vpc_origin   # cloudfront_vpc_origin | private (v1)
     custom_domain: null               # p. ej. approvals.internal.acme.example (requiere ACM en us-east-1)
@@ -162,21 +164,21 @@ infra:
 environments:
   dev:
     account: "111111111111"
-    region: eu-central-1
+    region: eu-north-1
     compute: { cpu: 512, memory: 1024, desired: 1, max: 2 }
     database: { instance: db.t4g.micro, multi_az: false, backup_days: 1, deletion_protection: false }
     seed_users: true
     removal_policy: destroy
   staging:                            # v1 (pipeline de promoción)
     account: "222222222222"
-    region: eu-central-1
+    region: eu-north-1
     compute: { cpu: 512, memory: 1024, desired: 1, max: 2 }
     database: { instance: db.t4g.small, multi_az: false, backup_days: 7, deletion_protection: true }
     seed_users: true
     removal_policy: snapshot
   prod:
     account: "333333333333"
-    region: eu-central-1
+    region: eu-north-1
     compute: { cpu: 1024, memory: 2048, desired: 2, max: 4 }
     database: { instance: db.t4g.medium, multi_az: true, backup_days: 14, deletion_protection: true }
     seed_users: false

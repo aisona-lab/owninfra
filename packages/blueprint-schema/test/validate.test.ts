@@ -94,7 +94,7 @@ describe("validateBlueprint", () => {
       expect.arrayContaining([
         "entities[2].workflow.transitions[2].require_fields[0]: unknown field 'reason'",
         "entities[2].list.columns[7]: unknown field 'total'",
-        "entities[2].fields[3].default: 'GBP' is not one of the enum values",
+        "entities[2].fields[3].default: 'GBP' must be one of EUR, USD, CZK",
         "permissions.PurchaseRequest.requester.update.in_states: unknown state 'open'",
       ]),
     );
@@ -116,6 +116,14 @@ describe("validateBlueprint", () => {
       "permissions.Vendor.manager: must be a list of actions (create, read, update, delete) or a map of action to rule",
       "permissions.PurchaseRequest.manager.read: must be true, false, 'all', 'own' or { own, in_states }",
     ]);
+  });
+
+  it("explains a missing or unsupported version", () => {
+    const bp = example();
+    bp.version = 0.2;
+    expect(messages(bp)).toEqual(["version: must be 0.1"]);
+    delete bp.version;
+    expect(messages(bp)).toEqual(["version: Required"]);
   });
 
   it("flags duplicate names", () => {

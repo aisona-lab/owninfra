@@ -9,7 +9,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "lint": "eslint . && tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "goldens:update": "pnpm build && UPDATE_GOLDENS=1 vitest run packages/compiler/test/golden.test.ts",
+    "test:pg": "vitest run --config vitest.pg.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

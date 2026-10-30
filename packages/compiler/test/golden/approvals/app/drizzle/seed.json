@@ -1,0 +1,9 @@
+[
+  {
+    "table": "departments",
+    "rows": [
+      { "code": "ENG", "manager_email": "eng-manager@acme.example", "name": "Ingeniería" },
+      { "code": "OPS", "manager_email": "ops-manager@acme.example", "name": "Operaciones" }
+    ]
+  }
+]
