@@ -11,7 +11,8 @@ import {
 import { ResponseTooLarge, type Db, type DbRow, type Param } from "./db";
 import { Unavailable, startingUp, unknownOutcome } from "./errors";
 
-type Client = Pick<RDSDataClient, "send">;
+/** RDSDataClient, or a test double. Method syntax so the SDK client's overloaded send fits. */
+type Client = { send(command: unknown, options?: { abortSignal?: AbortSignal }): Promise<unknown> };
 
 export type DataApiOptions = {
   resourceArn: string;
@@ -66,11 +67,11 @@ function toRows(out: ExecuteStatementCommandOutput): DbRow[] {
 
 export function dataApi(o: DataApiOptions): Db {
   // maxAttempts 1: the SDK must not retry on its own, since a blind retry of a write can apply it twice.
-  const client = o.client ?? new RDSDataClient({ maxAttempts: 1 });
+  const client: Client = o.client ?? new RDSDataClient({ maxAttempts: 1 });
   const budget = o.budgetMs ?? defaultBudgetMs;
   const target = { resourceArn: o.resourceArn, secretArn: o.secretArn };
 
-  async function send<T>(deadline: number, command: Parameters<Client["send"]>[0]): Promise<T> {
+  async function send<T>(deadline: number, command: unknown): Promise<T> {
     for (let wait = 500; ; wait = Math.min(wait * 2, 4_000)) {
       const left = deadline - Date.now();
       if (left <= 0) throw new Unavailable(startingUp, 5);

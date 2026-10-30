@@ -18,7 +18,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ["**/(generated)/**", "postgres", "drizzle-orm", "drizzle-orm/**"],
+              group: ["**/(generated)/**", "postgres", "drizzle-orm", "drizzle-orm/**", "@aws-sdk/*"],
               message: "Import from @/lib/owninfra. Its repository functions are guarded and audited.",
             },
           ],
