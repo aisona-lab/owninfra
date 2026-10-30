@@ -69,7 +69,7 @@ owninfra/
 │   ├── blueprint-schema/   # Zod + JSON Schema, semantic validator
 │   ├── compiler/           # planned: blueprint -> IR -> files (deterministic, no LLM)
 │   ├── templates/          # planned: Next.js app templates (managed zones)
-│   ├── constructs/         # planned: CDK L3 constructs (InternalApp, AppDatabase, AppAuth, AppObservability)
+│   ├── constructs/         # CDK stack for the approvals example (synth only; L3 constructs planned)
 │   ├── agent/              # planned: prompt -> blueprint with a repair loop, BYO model
 │   ├── mcp-server/         # planned (v1): CLI as MCP tools
 │   └── harness/            # planned: L0-L5 runners and reporters
