@@ -1,0 +1,26 @@
+{
+  "name": "@owninfra/constructs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "synth": "cdk synth --no-notices -q"
+  },
+  "dependencies": {
+    "@owninfra/blueprint-schema": "workspace:*",
+    "aws-cdk-lib": "2.275.0",
+    "constructs": "10.8.1"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1147.0"
+  }
+}
