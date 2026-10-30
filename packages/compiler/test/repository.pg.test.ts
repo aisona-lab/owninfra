@@ -5,14 +5,13 @@ import { readFileSync } from "node:fs";
 import { RDSDataClient } from "@aws-sdk/client-rds-data";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { throwawayDatabase } from "./throwaway-db.js";
 
 const url = process.env.REPO_TEST_DATABASE_URL;
 const endpoint = process.env.DATA_API_ENDPOINT;
 if (!url || !endpoint)
-  throw new Error("repository.pg.test.ts needs REPO_TEST_DATABASE_URL (a throwaway database whose name ends in _builder) and DATA_API_ENDPOINT (local-data-api in front of it)");
-const database = new URL(url).pathname.slice(1);
-console.log(`repository.pg.test.ts resets the public schema of database '${database}'`);
-if (!database.endsWith("_builder")) throw new Error(`refusing to reset '${database}': the name must end in _builder`);
+  throw new Error("repository.pg.test.ts needs REPO_TEST_DATABASE_URL (a throwaway database whose name ends in _builder or _verifier) and DATA_API_ENDPOINT (local-data-api in front of it)");
+const database = throwawayDatabase(url);
 
 const resourceArn = process.env.DATA_API_RESOURCE_ARN ?? "arn:aws:rds:eu-north-1:000000000000:cluster:local";
 const secretArn = process.env.DATA_API_SECRET_ARN ?? "arn:aws:secretsmanager:eu-north-1:000000000000:secret:local";
@@ -249,6 +248,21 @@ describe("drivers return identical values", () => {
     expect(viaTcp[0]).toMatchObject({ n: "1234567890.123456789", d: "2024-02-29", ts: "2026-03-29T00:30:00.500Z", nul: null, empty: "", t: params[6], i: -2147483648, b: true });
     expect(viaTcp[0].j).toEqual(JSON.parse(params[3] as string));
     expect(viaApi).toEqual(viaTcp);
+  });
+
+  it("for the audit log: its bigserial id is the same string on both, beyond 2^53 too", async () => {
+    await admin.unsafe("truncate audit_events, purchase_requests, departments, vendors");
+    current = viaTcp;
+    await department();
+    await admin.unsafe("select setval('audit_events_id_seq', 9007199254740992)");
+    await department();
+    const overTcp = await repo.auditLog(users.admin);
+    current = viaDataApi();
+    const overDataApi = await repo.auditLog(users.admin);
+    expect(overDataApi).toEqual(overTcp);
+    expect(overTcp).toHaveLength(2);
+    expect(overTcp[0].id).toBe("9007199254740993");
+    expect([...overTcp, ...overDataApi].map((r: { id: unknown }) => typeof r.id)).toEqual(["string", "string", "string", "string"]);
   });
 
   it("except bigint beyond 2^53, which the emulator returns as a JS number (a gap the repository avoids: its only bigint is audit_events.id)", async () => {

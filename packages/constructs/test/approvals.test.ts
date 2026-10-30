@@ -9,7 +9,7 @@ import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { describe, expect, it } from "vitest";
 import { validateBlueprintYaml } from "@owninfra/blueprint-schema";
-import { appStack, autoPause, defaultConcurrency, newApp, projectTag, unrotatedSecretReason } from "../src/index.js";
+import { appStack, autoPause, newApp, projectTag, unrotatedSecretReason } from "../src/index.js";
 
 const blueprint = readFileSync(new URL("../../../examples/approvals/blueprint.yaml", import.meta.url), "utf8");
 
@@ -323,9 +323,9 @@ describe("the public URL's concurrency cap follows the blueprint", () => {
     expect(reserved(synth({ envName: "prod" }).template)).toBe(4);
   });
 
-  it(`defaults to ${defaultConcurrency} when the environment has no compute block`, () => {
+  it("defaults to 5 when the environment has no compute block", () => {
     const yaml = blueprint.replace("    compute: { cpu: 512, memory: 1024, desired: 1, max: 2 }\n", "");
     expect(yaml).not.toBe(blueprint);
-    expect(reserved(synth({ yaml }).template)).toBe(defaultConcurrency);
+    expect(reserved(synth({ yaml }).template)).toBe(5);
   });
 });

@@ -57,7 +57,7 @@ function toValue(f: Field, type: string | undefined): unknown {
   if (s !== undefined && (type === "json" || type === "jsonb")) return JSON.parse(s);
   if (s !== undefined && (type === "timestamptz" || type === "timestamp"))
     return new Date(s.replace(" ", "T") + (/[+-]\d\d(:?\d\d)?$|Z$/.test(s) ? "" : "Z"));
-  if (f.longValue !== undefined) return type === "int8" ? String(f.longValue) : f.longValue;
+  if (f.longValue !== undefined) return type === "int8" || type === "bigserial" ? String(f.longValue) : f.longValue;
   return s ?? f.doubleValue ?? f.booleanValue ?? null;
 }
 

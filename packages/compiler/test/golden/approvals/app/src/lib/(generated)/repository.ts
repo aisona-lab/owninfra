@@ -230,5 +230,10 @@ export async function inbox(user: User): Promise<{ entity: EntityDef; row: Row }
 
 export async function auditLog(user: User, limit = 200): Promise<Row[]> {
   if (!user.roles.includes("admin")) throw new HttpError(403, "the audit log is for admins");
-  return readAll("select * from audit_events order by id desc", [], limit);
+  // id is bigserial: as text it keeps all 64 bits, and both drivers return the same string.
+  return readAll(
+    "select cast(id as text) as id, at, actor, entity, entity_id, action, before, after from audit_events order by audit_events.id desc",
+    [],
+    limit,
+  );
 }
