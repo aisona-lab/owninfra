@@ -27,6 +27,8 @@ export const registry: Registry = {
           min: null,
           max: 80,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "code",
@@ -40,6 +42,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: "^[A-Z]{2,6}$",
+          precision: null,
+          scale: null,
         },
         {
           name: "manager_email",
@@ -53,6 +57,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
       ],
       workflow: null,
@@ -76,6 +82,8 @@ export const registry: Registry = {
           min: null,
           max: 140,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "description",
@@ -89,6 +97,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "amount",
@@ -102,6 +112,8 @@ export const registry: Registry = {
           min: 0.01,
           max: null,
           pattern: null,
+          precision: 12,
+          scale: 2,
         },
         {
           name: "currency",
@@ -115,6 +127,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "department",
@@ -128,6 +142,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "vendor",
@@ -141,6 +157,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "needed_by",
@@ -154,6 +172,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "justification",
@@ -167,6 +187,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "rejection_reason",
@@ -180,6 +202,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
       ],
       workflow: {
@@ -300,6 +324,8 @@ export const registry: Registry = {
           min: null,
           max: 120,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "tax_id",
@@ -313,6 +339,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "contact_email",
@@ -326,6 +354,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
         {
           name: "active",
@@ -339,6 +369,8 @@ export const registry: Registry = {
           min: null,
           max: null,
           pattern: null,
+          precision: null,
+          scale: null,
         },
       ],
       workflow: null,

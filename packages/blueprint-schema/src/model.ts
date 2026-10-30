@@ -1,6 +1,6 @@
-import type { Blueprint as RawBlueprint } from "./schema.js";
+import type { Blueprint as RawBlueprint, Field as RawField } from "./schema.js";
 import { crudActions } from "./schema.js";
-import { parseValue, uniqueKey, type Canonical } from "./codecs.js";
+import { parseValue, uniqueKey, type Canonical, type FieldType } from "./codecs.js";
 import { isSystemColumn, maxIdentifier, sqlIdentifierProblem, tableName } from "./naming.js";
 
 export interface Issue {
@@ -291,9 +291,16 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]): Map<string, Record<string
           errors.push({ path: `seed.${key}[${i}].${k}`, message: `unknown field '${k}'` });
           continue;
         }
+        if (f.type === "ref") {
+          errors.push({
+            path: `seed.${key}[${i}].${k}`,
+            message: `seed rows cannot set ref field '${k}' (to ${f.to}): seeded rows get generated ids, so references between seeds are not supported yet`,
+          });
+          continue;
+        }
         const r = parseValue(f, raw);
-        if (r.ok) out[k] = r.value;
-        else errors.push({ path: `seed.${key}[${i}].${k}`, message: r.error });
+        if (!r.ok) errors.push({ path: `seed.${key}[${i}].${k}`, message: r.error });
+        else if (r.value !== undefined) out[k] = r.value;
       }
       return out;
     });
@@ -301,9 +308,9 @@ function checkSeed(bp: RawBlueprint, errors: Issue[]): Map<string, Record<string
       const def = f.default === undefined ? null : parseValue(f, f.default);
       const seen = new Map<string, number>();
       parsed.forEach((row, i) => {
-        const fromDefault = !(f.name in rows[i]);
+        const fromDefault = !(f.name in row);
         const value = fromDefault ? (def?.ok ? def.value : null) : f.name in row ? row[f.name] : null;
-        if (value === null) return;
+        if (value === null || value === undefined) return;
         const k = uniqueKey(value);
         const first = seen.get(k);
         const shown = typeof value === "string" ? `'${value}'` : String(value);
@@ -419,3 +426,6 @@ function build(bp: RawBlueprint, seedRows: ReadonlyMap<string, Record<string, Ca
     environments: { dev: env("dev") as Env, prod: env("prod") },
   };
 }
+
+type SameKeys<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+export const fieldTypesMatchCodecs: SameKeys<RawField["type"], FieldType> = true;

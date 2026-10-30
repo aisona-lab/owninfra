@@ -1,16 +1,50 @@
 "use server";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { fromForm } from "./coerce";
+import { HttpError } from "./errors";
+import { createColumns, entityByTable } from "./guard";
 import { create, transition } from "./repository";
 import { requireUser } from "./session";
 
-const fields = (form: FormData) => Object.fromEntries([...form.entries()].filter(([k]) => !k.startsWith("$")).map(([k, v]) => [k, String(v)]));
+export type FormState = { errors: Record<string, string>; values: Record<string, string> } | null;
 
-export async function createAction(table: string, form: FormData) {
-  const row = await create(await requireUser(), table, fields(form));
-  redirect(`/e/${table}/${row.id}`);
+const echo = (form: FormData) => Object.fromEntries([...form.entries()].filter((e): e is [string, string] => typeof e[1] === "string"));
+
+function failed(e: unknown, form: FormData): FormState {
+  if (!(e instanceof HttpError)) throw e;
+  return { errors: e.fields ?? { "": e.message }, values: echo(form) };
 }
 
-export async function transitionAction(table: string, id: string, transitionId: string, form: FormData) {
-  await transition(await requireUser(), table, id, transitionId, fields(form));
+function refresh(table: string, id: string) {
+  revalidatePath(`/e/${table}/${id}`);
+  revalidatePath(`/e/${table}`);
+  revalidatePath("/inbox");
+  revalidatePath("/admin/audit");
+}
+
+export async function createAction(table: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const entity = entityByTable(table);
+  if (!entity) return { errors: { "": `unknown entity '${table}'` }, values: {} };
+  let id: string;
+  try {
+    id = (await create(await requireUser(), table, fromForm(createColumns(entity), form))).id;
+  } catch (e) {
+    return failed(e, form);
+  }
+  refresh(table, id);
+  redirect(`/e/${table}/${id}`);
+}
+
+export async function transitionAction(table: string, id: string, transitionId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const entity = entityByTable(table);
+  const t = entity?.workflow?.transitions.find((x) => x.id === transitionId);
+  if (!entity || !t) return { errors: { "": `unknown transition '${transitionId}'` }, values: {} };
+  try {
+    await transition(await requireUser(), table, id, transitionId, fromForm(entity.columns.filter((c) => t.requireFields.includes(c.name)), form));
+  } catch (e) {
+    return failed(e, form);
+  }
+  refresh(table, id);
   redirect(`/e/${table}/${id}`);
 }

@@ -54,6 +54,18 @@ owninfra dev             # docker compose Postgres, migrate, seed, next dev on :
 
 `version` must be `0.1`. YAML reads the number `0.10` as `0.1`, so it is accepted, but the string `"0.10"` is rejected.
 
+## Generated app behavior
+
+- **Input values.** Seeds, forms and the JSON API all go through one codec per field type (`packages/blueprint-schema/src/codecs.ts`, shipped unchanged to `app/src/lib/(generated)/codecs.ts`). Before any type check, a string value is normalized. `\r\n` becomes `\n`. Whitespace and zero-width characters (U+200B to U+200D, U+2060, U+FEFF) are removed only at the ends of a value, never inside it, so emoji ZWJ sequences, ZWNJ and Devanagari conjuncts are stored byte for byte. For `text` fields, only leading and trailing blank lines are dropped, so the first line keeps its indentation. All other types are trimmed at both ends. If a value is empty once all of those characters are removed, a required field fails with `is required`. On create, a blank optional field is treated as absent: the column default applies if there is one, and otherwise the value is stored as `NULL`. In a PATCH or a transition, a blank optional field is cleared to `NULL`. An explicit JSON `null` is stored as `NULL`. Form `datetime` inputs have no zone and are read as UTC. Times are displayed in UTC.
+- **Transition-only fields.** A field listed in any transition's `require_fields` can be written only by a transition. PATCH returns 422 for it. A transition must receive every one of its `require_fields`, non-blank, in the same request; values already stored never count.
+- **Create forms** show only the fields that can be set at create. A field that a transition requires (such as `rejection_reason`) is set by that transition, unless the field is itself required. The API rejects such a field on create with 422.
+- **Validation errors** come back as 422 with `{ "error": "...", "fields": { "<field>": "<message>" } }`. Forms show each message next to its field.
+- **Transitions:** `POST /api/e/<table>/<id>/transitions/<transition>` checks the request in this order:
+  1. The transition exists on the entity. If not: 404 `unknown transition`, with or without a body.
+  2. The row exists and is readable. If not: 404 `not found`.
+  3. The body is valid JSON (400) and sets only the transition's `require_fields` (422).
+  4. State, role and separation-of-duties rules (409, 403 or 422).
+
 ## Repo layout
 
 ```

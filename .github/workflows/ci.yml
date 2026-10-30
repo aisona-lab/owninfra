@@ -75,6 +75,12 @@ jobs:
         working-directory: ${{ runner.temp }}/approvals
       - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js dev --db-only && node $GITHUB_WORKSPACE/packages/cli/dist/bin.js dev --db-only
         working-directory: ${{ runner.temp }}/approvals
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Width, console and API checks against the running app
+        run: |
+          (cd "$RUNNER_TEMP/approvals/app" && OWNINFRA_AUTH_STUB=1 AUTH_SECRET=ci-only nohup npx next dev -p 3217 > /tmp/owninfra-next.log 2>&1 &)
+          for i in $(seq 1 120); do curl -sf http://localhost:3217/api/auth/csrf > /dev/null && break; sleep 1; done
+          PW_CHANNEL=chromium node e2e/widths.mjs || { tail -50 /tmp/owninfra-next.log; exit 1; }
       - run: |
           if OWNINFRA_AUTH_STUB=1 npx next build; then echo "stub build must fail"; exit 1; fi
           npx next build
