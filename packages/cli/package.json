@@ -14,5 +14,8 @@
     "@owninfra/blueprint-schema": "workspace:*",
     "@owninfra/compiler": "workspace:*",
     "@owninfra/constructs": "workspace:*"
+  },
+  "devDependencies": {
+    "aws-cdk-lib": "2.275.0"
   }
 }

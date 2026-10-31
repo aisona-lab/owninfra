@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Stack } from "aws-cdk-lib";
 import { validateBlueprintYaml } from "@owninfra/blueprint-schema";
 import { devDatabaseUrl, throwawayDatabase } from "@owninfra/compiler";
 import { appStack, idleCostFindings, newApp, type Template } from "@owninfra/constructs";
@@ -33,7 +34,7 @@ function capture(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.
 const tail = (output: string, lines = 15) => output.trim().split("\n").slice(-lines).join("\n");
 
 /** Synthesizes one environment's stack with cdk-nag on (a finding throws), then runs the idle-cost guard on the template. */
-export function checkInfra(blueprint: string, envName: "dev" | "prod", extend?: (stack: ReturnType<typeof appStack>) => void) {
+export function checkInfra(blueprint: string, envName: "dev" | "prod", extend?: (stack: Stack) => void) {
   const v = validateBlueprintYaml(blueprint);
   check(v.ok, "the blueprint does not validate");
   const app = newApp(mkdtempSync(join(tmpdir(), "owninfra-smoke-")));
