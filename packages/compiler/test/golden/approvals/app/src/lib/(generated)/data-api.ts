@@ -68,6 +68,15 @@ function toRows(out: ExecuteStatementCommandOutput): DbRow[] {
   );
 }
 
+/** A client for local-data-api, the emulator `owninfra smoke --data-api` runs against. Its credentials are placeholders it ignores. */
+export const emulatorClient = (endpoint: string): Client =>
+  new RDSDataClient({
+    endpoint,
+    region: "eu-north-1",
+    maxAttempts: 1,
+    credentials: { accessKeyId: "local", secretAccessKey: "local" },
+  });
+
 export function dataApi(o: DataApiOptions): Db {
   // maxAttempts 1: the SDK must not retry on its own, since a blind retry of a write can apply it twice.
   const client: Client = o.client ?? new RDSDataClient({ maxAttempts: 1 });

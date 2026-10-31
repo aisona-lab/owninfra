@@ -5,13 +5,13 @@ import { readFileSync } from "node:fs";
 import { RDSDataClient } from "@aws-sdk/client-rds-data";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { throwawayDatabase } from "./throwaway-db.js";
+import { throwawayDatabase } from "../src/throwaway-db.js";
 
 const url = process.env.REPO_TEST_DATABASE_URL;
 const endpoint = process.env.DATA_API_ENDPOINT;
 if (!url || !endpoint)
   throw new Error("repository.pg.test.ts needs REPO_TEST_DATABASE_URL (a throwaway database whose name ends in _builder or _verifier) and DATA_API_ENDPOINT (local-data-api in front of it)");
-const database = throwawayDatabase(url);
+const database = throwawayDatabase(url, "repository.pg.test.ts");
 
 const resourceArn = process.env.DATA_API_RESOURCE_ARN ?? "arn:aws:rds:eu-north-1:000000000000:cluster:local";
 const secretArn = process.env.DATA_API_SECRET_ARN ?? "arn:aws:secretsmanager:eu-north-1:000000000000:secret:local";

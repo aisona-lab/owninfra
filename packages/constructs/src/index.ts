@@ -157,6 +157,29 @@ export function appStack(scope: Construct, model: Model, envName: "dev" | "prod"
   return stack;
 }
 
+/** A synthesized CloudFormation template, as far as the idle-cost guard reads it. */
+export type Template = { Resources: Record<string, { Type: string; Properties?: Record<string, unknown> }> };
+
+/** Everything that would bill by the hour while the dev stack sits idle. Checks the template itself, not the snapshot. */
+export function idleCostFindings(t: Template): string[] {
+  const hourly = ["AWS::EC2::NatGateway", "AWS::EC2::EIP", "AWS::EC2::InternetGateway", "AWS::EC2::Instance", "AWS::ECS::Service"];
+  const findings: string[] = [];
+  for (const [id, r] of Object.entries(t.Resources)) {
+    const p = r.Properties ?? {};
+    if (hourly.includes(r.Type)) findings.push(`${id}: ${r.Type}`);
+    if (r.Type === "AWS::EC2::VPCGatewayAttachment" && p.InternetGatewayId !== undefined) findings.push(`${id}: attaches an internet gateway`);
+    if (r.Type === "AWS::EC2::VPCEndpoint" && p.VpcEndpointType === "Interface") findings.push(`${id}: interface VPC endpoint`);
+    if (p.ProvisionedConcurrencyConfig !== undefined) findings.push(`${id}: Lambda provisioned concurrency`);
+    if (r.Type === "AWS::RDS::DBInstance" && p.DBInstanceClass !== "db.serverless") findings.push(`${id}: provisioned DB instance ${String(p.DBInstanceClass)}`);
+    if (r.Type === "AWS::RDS::DBCluster") {
+      const scaling = p.ServerlessV2ScalingConfiguration as { MinCapacity?: unknown; SecondsUntilAutoPause?: unknown } | undefined;
+      if (scaling?.MinCapacity !== 0) findings.push(`${id}: Aurora MinCapacity ${String(scaling?.MinCapacity)}, not 0`);
+      if (scaling?.SecondsUntilAutoPause !== autoPause.toSeconds()) findings.push(`${id}: SecondsUntilAutoPause ${String(scaling?.SecondsUntilAutoPause)}, not ${autoPause.toSeconds()}`);
+    }
+  }
+  return findings;
+}
+
 export function newApp(outdir?: string): App {
   const app = new App({ outdir, analyticsReporting: false, postCliContext: { "aws:cdk:enable-path-metadata": false } });
   Validations.of(app).addPlugins(new AwsSolutionsChecks(app));

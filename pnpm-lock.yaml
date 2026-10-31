@@ -57,6 +57,9 @@ importers:
       '@owninfra/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@owninfra/constructs':
+        specifier: workspace:*
+        version: link:../constructs
 
   packages/compiler:
     dependencies:
