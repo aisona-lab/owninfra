@@ -30,6 +30,15 @@ function check(bp: RawBlueprint): { errors: Issue[]; warnings: Issue[] } {
         const d = parseValue(f, f.default);
         if (!d.ok) errors.push({ path: `${p}.default`, message: `'${f.default}' ${d.error}` });
       }
+      if (f.type === "decimal" && f.precision !== undefined) {
+        const scale = f.scale ?? 0;
+        const largest = `${"9".repeat(Math.max(f.precision - scale, 0)) || "0"}${scale ? `.${"9".repeat(scale)}` : ""}`;
+        for (const key of ["min", "max"] as const) {
+          const v = f[key];
+          if (v !== undefined && Math.abs(v) > Number(largest))
+            errors.push({ path: `${p}.${key}`, message: `${key} ${v} of '${f.name}' is outside what numeric(${f.precision}, ${scale}) can hold: -${largest} to ${largest}` });
+        }
+      }
       if (f.type === "files") warnings.push({ path: p, message: "'files' fields are v1 and ignored by the MVP" });
       if (f.visible_when) warnings.push({ path: `${p}.visible_when`, message: "conditional visibility is v1 and ignored by the MVP" });
     });

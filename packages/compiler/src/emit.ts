@@ -167,7 +167,9 @@ function check(files: OutFile[]) {
   }
 }
 
+// package-lock.json keeps npm's own formatting, so `npm ci` and `npm install` leave its bytes, and its lock hash, alone.
 const parserFor = (path: string) =>
+  path.endsWith("package-lock.json") ? null :
   /\.(ts|tsx|mts)$/.test(path) ? "typescript" : /\.(mjs|js)$/.test(path) ? "babel" : path.endsWith(".json") ? "json" : null;
 
 function withHeader(path: string, contents: string): string {

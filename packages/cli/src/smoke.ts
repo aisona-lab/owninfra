@@ -90,10 +90,14 @@ export async function smoke(args: string[], io: Io, dir = process.cwd()): Promis
       return devDatabaseUrl(project.ir);
     });
     if (!existsSync(join(app, "node_modules")))
-      await step("install", async () => {
-        const r = await capture("npm", ["install", "--no-audit", "--no-fund"], { cwd: app });
+      await step("install (npm ci)", async () => {
+        const r = await capture("npm", ["ci", "--no-audit", "--no-fund"], { cwd: app });
         check(r.code === 0, tail(r.output));
       });
+    await step("dependencies: node_modules matches package-lock.json", async () => {
+      const r = await capture("node", ["scripts/check-deps.mjs"], { cwd: app });
+      check(r.code === 0, tail(r.output, 25));
+    });
     const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: url, NEXT_TELEMETRY_DISABLED: "1" };
     await step("migrate and seed (dev-db --reset)", async () => {
       const r = await capture("node", ["scripts/dev-db.mjs", "--reset"], { cwd: app, env });
