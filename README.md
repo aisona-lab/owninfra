@@ -44,6 +44,16 @@ owninfra dev             # docker compose Postgres, migrate, seed, next dev on :
 
 `dev` uses `docker compose` by default. Set `DATABASE_URL` to use a Postgres you run yourself. Sign in at `/api/auth/signin` as one of the seed users (`requester@acme.example`, `manager@acme.example`, `finance@acme.example`) with no password. This local stub is enabled by `OWNINFRA_AUTH_STUB=1`, which `dev` sets, and `next build` fails when it is set.
 
+`owninfra smoke` checks a generated project end to end with no AWS account: it resets the database, migrates and seeds, checks that `next build` refuses `OWNINFRA_AUTH_STUB=1`, synthesizes the dev and prod stacks with cdk-nag and the idle-cost guard, boots `next dev`, signs in as every seed user and checks their roles, and, for the approvals example, runs a scripted session over the API: create and edit, submit, approve and reject, the 403, 409 and 422 cases, and the audit log. Each step prints `ok` or `FAIL`; the first failure stops the run, prints `smoke: failed at '<step>'` and exits 1.
+
+```sh
+DATABASE_URL=postgres://owninfra:owninfra@127.0.0.1:5432/smoke_builder owninfra smoke --port 3021
+# the same session through the RDS Data API driver, against a local-data-api emulator on :8080
+DATABASE_URL=postgres://owninfra:owninfra@127.0.0.1:5432/smoke_builder owninfra smoke --port 3021 --data-api http://127.0.0.1:8080
+```
+
+Without `DATABASE_URL`, `smoke` starts the project's `docker compose` Postgres like `dev`. With it, the database name must end in `_builder` or `_verifier`, because `smoke` drops its public schema. `--port` defaults to 3000. `--data-api` points the app at the emulator with placeholder ARNs (`arn:aws:rds:eu-north-1:000000000000:cluster:local`); migrations and the seed still go over `DATABASE_URL`, so the emulator must reach the same database. The app refuses `DATA_API_ENDPOINT` when `NODE_ENV=production`. CI runs both variants on every pull request (`smoke` job in `.github/workflows/ci.yml`).
+
 `generate` is idempotent. It records a hash of every generated file in `owninfra.lock.json` and refuses to overwrite a file you edited by hand (pass `--force` to discard the edit). Put your own code in `app/src/custom/` and import from `@/lib/owninfra`; `generate` never touches it. If the blueprint changes after the dev database was created, `dev` refuses until you run `owninfra dev --reset`, which drops and recreates it.
 
 ## Blueprint
