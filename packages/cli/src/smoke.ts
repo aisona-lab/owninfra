@@ -9,6 +9,7 @@ import { appStack, idleCostFindings, newApp, type Template } from "@owninfra/con
 import type { Io } from "./index.js";
 import { generatedProject } from "./project.js";
 import { approvals } from "./smoke-approvals.js";
+import { crud } from "./smoke-crud.js";
 import { check, Failed, signIn, type User } from "./smoke-client.js";
 
 /** The ARNs local-data-api is started with (any account-000000000000 values work; it does not call AWS). */
@@ -130,6 +131,7 @@ export async function smoke(args: string[], io: Io, dir = process.cwd()): Promis
         check(JSON.stringify([...u.session.roles].sort()) === JSON.stringify([...roles].sort()), `expected roles [${roles.join(", ")}], got [${u.session.roles.join(", ")}]`);
         signedIn.set(email, u);
       });
+    await crud(project.ir, (email) => signedIn.get(email)!, step, io.out);
     if (scenario) await scenario.run((email) => signedIn.get(email)!, step);
     else io.out(`note: no scripted scenario for '${project.ir.app.name}'; ran the generic steps only`);
     io.out(`smoke: passed ${passed} steps`);

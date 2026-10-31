@@ -44,13 +44,15 @@ owninfra dev             # docker compose Postgres, migrate, seed, next dev on :
 
 `dev` uses `docker compose` by default. Set `DATABASE_URL` to use a Postgres you run yourself. Sign in at `/api/auth/signin` as one of the seed users (`requester@acme.example`, `manager@acme.example`, `finance@acme.example`) with no password. This local stub is enabled by `OWNINFRA_AUTH_STUB=1`, which `dev` sets, and `next build` fails when it is set.
 
-`owninfra smoke` checks a generated project end to end with no AWS account: it resets the database, migrates and seeds, checks that `next build` refuses `OWNINFRA_AUTH_STUB=1`, synthesizes the dev and prod stacks with cdk-nag and the idle-cost guard, boots `next dev`, signs in as every seed user and checks their roles, and, for the approvals example, runs a scripted session over the API: create and edit, submit, approve and reject, the 403, 409 and 422 cases, and the audit log. Each step prints `ok` or `FAIL`; the first failure stops the run, prints `smoke: failed at '<step>'` and exits 1.
+`owninfra smoke` checks a generated project end to end with no AWS account: it resets the database, migrates and seeds, checks that `next build` refuses `OWNINFRA_AUTH_STUB=1`, synthesizes the dev and prod stacks with cdk-nag and the idle-cost guard, boots `next dev`, signs in as every seed user and checks their roles, then, on every entity, creates, reads, updates and deletes a row as seed users the blueprint's permissions allow (values come from the seeds and the column types; a seed user without create permission must get 403, and so must a delete the blueprint does not allow). For the approvals example it then runs a scripted session over the API: create and edit, submit, approve and reject, the 403, 409 and 422 cases, and the audit log. Each step prints `ok` or `FAIL`; the first failure stops the run, prints `smoke: failed at '<step>'` and exits 1.
 
 ```sh
 DATABASE_URL=postgres://owninfra:owninfra@127.0.0.1:5432/smoke_builder owninfra smoke --port 3021
 # the same session through the RDS Data API driver, against a local-data-api emulator on :8080
 DATABASE_URL=postgres://owninfra:owninfra@127.0.0.1:5432/smoke_builder owninfra smoke --port 3021 --data-api http://127.0.0.1:8080
 ```
+
+A `pattern` field gets its value by changing one character of a seeded value, so an entity with a pattern field needs a seed row for `smoke` to create it; without one, `smoke` fails and says so.
 
 Without `DATABASE_URL`, `smoke` starts the project's `docker compose` Postgres like `dev`. With it, the database name must end in `_builder` or `_verifier`, because `smoke` drops its public schema. `--port` defaults to 3000. `--data-api` points the app at the emulator with placeholder ARNs (`arn:aws:rds:eu-north-1:000000000000:cluster:local`); migrations and the seed still go over `DATABASE_URL`, so the emulator must reach the same database. The app refuses `DATA_API_ENDPOINT` when `NODE_ENV=production`. CI runs both variants on every pull request (`smoke` job in `.github/workflows/ci.yml`).
 

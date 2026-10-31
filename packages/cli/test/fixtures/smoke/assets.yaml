@@ -1,0 +1,113 @@
+# A second, unrelated blueprint for `owninfra smoke`: its generic CRUD steps must pass here with nothing keyed on the app name.
+version: 0.1
+
+app:
+  name: asset-tracker
+  title: "Asset tracker"
+  owner: platform-team@example.com
+
+auth:
+  provider: cognito
+  login: [email_password]
+
+roles:
+  - id: staff
+    default: true
+  - id: keeper
+  - id: auditor
+
+entities:
+  - name: Location
+    label: "Location"
+    fields:
+      - { name: code, type: string, required: true, unique: true, pattern: "^LOC-[0-9]{3}$" }
+      - { name: city, type: string, required: true, max: 40 }
+    display: code
+
+  - name: Asset
+    label: "Asset"
+    fields:
+      - { name: tag, type: string, required: true, unique: true, max: 24 }
+      - { name: kind, type: enum, values: [laptop, monitor, phone], required: true }
+      - { name: quantity, type: int, required: true, min: 1, max: 50 }
+      - { name: cost, type: decimal, precision: 8, scale: 2, required: true, min: 10 }
+      - { name: bought_on, type: date, required: true }
+      - { name: checked_at, type: datetime, required: true }
+      - { name: custodian, type: email, required: true, unique: true }
+      - { name: in_service, type: bool, required: true }
+      - { name: location, type: ref, to: Location, required: true }
+      - { name: notes, type: text }
+    display: tag
+
+  - name: Repair
+    label: "Repair"
+    fields:
+      - { name: asset, type: ref, to: Asset, required: true }
+      - { name: problem, type: text, required: true }
+      - { name: refusal, type: text }
+    display: problem
+    ownership: created_by
+    workflow:
+      field: status
+      initial: open
+      states:
+        - { id: open, label: "Open" }
+        - { id: fixed, label: "Fixed", final: true }
+        - { id: refused, label: "Refused", final: true }
+      transitions:
+        - { id: fix, from: open, to: fixed, roles: [keeper] }
+        - { id: refuse, from: open, to: refused, roles: [keeper], require_fields: [refusal] }
+
+permissions:
+  Location:
+    staff: [read]
+    keeper: [create, read, update, delete]
+    auditor: [read]
+  Asset:
+    staff: [read]
+    keeper: [create, read, update]
+    auditor: [read]
+  Repair:
+    staff: { create: true, read: own, update: { own: true, in_states: [open] } }
+    keeper: { read: all }
+    auditor: { read: all }
+
+audit:
+  enabled: true
+
+seed:
+  Location:
+    - { code: "LOC-001", city: "Brno" }
+  users:
+    - { email: "staff@example.com", roles: [staff] }
+    - { email: "keeper@example.com", roles: [keeper] }
+    - { email: "auditor@example.com", roles: [auditor] }
+
+infra:
+  iac: cdk
+  compute: fargate
+  region_default: eu-north-1
+  network:
+    exposure: cloudfront_vpc_origin
+  database:
+    engine: postgres
+    version: "16"
+  observability:
+    log_retention_days: 30
+    alarm_email: platform-oncall@example.com
+
+environments:
+  dev:
+    account: "111111111111"
+    region: eu-north-1
+    compute: { cpu: 512, memory: 1024, desired: 1, max: 2 }
+    database: { instance: db.t4g.micro, multi_az: false, backup_days: 1, deletion_protection: false }
+    seed_users: true
+    removal_policy: destroy
+  prod:
+    account: "333333333333"
+    region: eu-north-1
+    compute: { cpu: 1024, memory: 2048, desired: 2, max: 4 }
+    database: { instance: db.t4g.medium, multi_az: true, backup_days: 14, deletion_protection: true }
+    seed_users: false
+    removal_policy: retain
