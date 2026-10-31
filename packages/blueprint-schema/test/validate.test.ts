@@ -138,6 +138,27 @@ describe("validateBlueprint", () => {
     expect(messages(bp)).toEqual(["version: Required"]);
   });
 
+  it("rejects a decimal min or max outside what its precision and scale can hold", () => {
+    const withAmount = (amount: Record<string, unknown>) => {
+      const bp = example();
+      const fields = bp.entities.find((e: { name: string }) => e.name === "PurchaseRequest").fields;
+      fields[fields.findIndex((f: { name: string }) => f.name === "amount")] = { name: "amount", type: "decimal", ...amount };
+      return messages(bp).filter((m) => m.includes("can hold"));
+    };
+    const at = "entities[2].fields[2]";
+    expect(withAmount({ precision: 4, scale: 2, min: 100 })).toEqual([`${at}.min: min 100 of 'amount' is outside what numeric(4, 2) can hold: -99.99 to 99.99`]);
+    expect(withAmount({ precision: 4, scale: 2, max: 100 })).toEqual([`${at}.max: max 100 of 'amount' is outside what numeric(4, 2) can hold: -99.99 to 99.99`]);
+    expect(withAmount({ precision: 4, scale: 2, min: 99.99, max: 99.99 })).toEqual([]);
+    expect(withAmount({ precision: 4, scale: 2, min: -99.99, max: 99.99 })).toEqual([]);
+    expect(withAmount({ precision: 4, scale: 2, min: -100 })).toEqual([`${at}.min: min -100 of 'amount' is outside what numeric(4, 2) can hold: -99.99 to 99.99`]);
+    expect(withAmount({ precision: 4, scale: 2, max: -100 })).toEqual([`${at}.max: max -100 of 'amount' is outside what numeric(4, 2) can hold: -99.99 to 99.99`]);
+    expect(withAmount({ precision: 4, scale: 2, min: 99.991 })).toHaveLength(1);
+    expect(withAmount({ precision: 3, min: 999 })).toEqual([]);
+    expect(withAmount({ precision: 3, scale: 0, min: 1000 })).toEqual([`${at}.min: min 1000 of 'amount' is outside what numeric(3, 0) can hold: -999 to 999`]);
+    expect(withAmount({ precision: 2, scale: 2, max: 1 })).toEqual([`${at}.max: max 1 of 'amount' is outside what numeric(2, 2) can hold: -0.99 to 0.99`]);
+    expect(withAmount({ min: 1e12 })).toEqual([]);
+  });
+
   it("flags duplicate names", () => {
     const bp = example();
     bp.roles.push({ id: "admin" });

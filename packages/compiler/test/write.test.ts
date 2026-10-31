@@ -110,7 +110,7 @@ describe("lock paths", () => {
 
   it("cannot delete project files outside the generated zone even with matching hashes", async () => {
     const { dir, fs } = await project();
-    const victims = [".git/HEAD", ".env", "README.md", "app/package-lock.json"];
+    const victims = [".git/HEAD", ".env", "README.md", "app/src/custom/package-lock.json"];
     for (const v of victims) {
       mkdirSync(join(dir, v, ".."), { recursive: true });
       writeFileSync(join(dir, v), "keep\n");

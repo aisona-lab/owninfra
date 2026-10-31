@@ -80,7 +80,7 @@ jobs:
       - run: node packages/cli/dist/bin.js init --example approvals "$RUNNER_TEMP/approvals"
       - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate
         working-directory: ${{ runner.temp }}/approvals
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund && npm run check-deps
         working-directory: ${{ runner.temp }}/approvals/app
       - run: npx tsc --noEmit && npx eslint . && npx vitest run
         working-directory: ${{ runner.temp }}/approvals/app
@@ -152,3 +152,12 @@ jobs:
         working-directory: ${{ runner.temp }}/assets
       - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js smoke --port 3022 --data-api http://localhost:8080
         working-directory: ${{ runner.temp }}/assets
+      # evals/smoke-unreachable-ref passes every earlier level and must fail at smoke, at this step.
+      - run: mkdir "$RUNNER_TEMP/unreachable" && cp evals/smoke-unreachable-ref/blueprint.yaml "$RUNNER_TEMP/unreachable/blueprint.yaml"
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate
+        working-directory: ${{ runner.temp }}/unreachable
+      - run: |
+          if node $GITHUB_WORKSPACE/packages/cli/dist/bin.js smoke --port 3023 > out.txt 2>&1; then cat out.txt; echo "the eval case must fail at smoke"; exit 1; fi
+          cat out.txt
+          grep -qx "smoke: failed at 'crud assets: create as keeper@example.com'" out.txt
+        working-directory: ${{ runner.temp }}/unreachable

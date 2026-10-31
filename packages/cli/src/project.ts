@@ -121,7 +121,7 @@ export async function dev(args: string[], io: Io, dir = process.cwd()): Promise<
     io.err("dev: 'docker compose up' failed. Start Docker, or set DATABASE_URL to a Postgres you run yourself.");
     return 1;
   }
-  if (!existsSync(join(app, "node_modules")) && (await run("npm", ["install", "--no-audit", "--no-fund"], { cwd: app })) !== 0) return 1;
+  if (!existsSync(join(app, "node_modules")) && (await run("npm", ["ci", "--no-audit", "--no-fund"], { cwd: app })) !== 0) return 1;
   const db = await run("node", ["scripts/dev-db.mjs", ...(args.includes("--reset") ? ["--reset"] : [])], { cwd: app, env });
   if (db !== 0) return db;
   if (args.includes("--db-only")) return 0;
