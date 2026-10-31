@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { validateBlueprintYaml, type Issue } from "@owninfra/blueprint-schema";
 import { dev, generate, init } from "./project.js";
+import { smoke } from "./smoke.js";
 
 export interface Io {
   out: (line: string) => void;
@@ -16,6 +17,7 @@ Commands:
   init --example <name> [dir]  Start a project from an example blueprint
   generate [--force]  Write the app from ./blueprint.yaml
   dev [--reset] [--db-only] [--port n]  Run Postgres, migrate, seed and next dev
+  smoke [--port n] [--data-api <url>]  Reset the dev database, boot the app and run its scripted checks
 ${planned.map((c) => `  ${c.padEnd(16)}  not implemented yet`).join("\n")}
 `;
 
@@ -29,6 +31,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
   if (command === "init") return init(args, io);
   if (command === "generate") return generate(args, io);
   if (command === "dev") return dev(args, io);
+  if (command === "smoke") return smoke(args, io);
   if ((planned as readonly string[]).includes(command)) {
     io.err(`owninfra ${command}: not implemented yet`);
     return 2;

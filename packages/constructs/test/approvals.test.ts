@@ -9,7 +9,7 @@ import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { describe, expect, it } from "vitest";
 import { validateBlueprintYaml } from "@owninfra/blueprint-schema";
-import { appStack, autoPause, newApp, projectTag, unrotatedSecretReason } from "../src/index.js";
+import { appStack, idleCostFindings, newApp, projectTag, unrotatedSecretReason } from "../src/index.js";
 
 const blueprint = readFileSync(new URL("../../../examples/approvals/blueprint.yaml", import.meta.url), "utf8");
 
@@ -58,26 +58,6 @@ const one = (t: Template, type: string) => {
   expect(found).toHaveLength(1);
   return found[0]!.Properties ?? {};
 };
-
-/** Everything that would bill by the hour while the dev stack sits idle. Checks the template itself, not the snapshot. */
-function idleCostFindings(t: Template): string[] {
-  const hourly = ["AWS::EC2::NatGateway", "AWS::EC2::EIP", "AWS::EC2::InternetGateway", "AWS::EC2::Instance", "AWS::ECS::Service"];
-  const findings: string[] = [];
-  for (const [id, r] of Object.entries(t.Resources)) {
-    const p = r.Properties ?? {};
-    if (hourly.includes(r.Type)) findings.push(`${id}: ${r.Type}`);
-    if (r.Type === "AWS::EC2::VPCGatewayAttachment" && p.InternetGatewayId !== undefined) findings.push(`${id}: attaches an internet gateway`);
-    if (r.Type === "AWS::EC2::VPCEndpoint" && p.VpcEndpointType === "Interface") findings.push(`${id}: interface VPC endpoint`);
-    if (p.ProvisionedConcurrencyConfig !== undefined) findings.push(`${id}: Lambda provisioned concurrency`);
-    if (r.Type === "AWS::RDS::DBInstance" && p.DBInstanceClass !== "db.serverless") findings.push(`${id}: provisioned DB instance ${String(p.DBInstanceClass)}`);
-    if (r.Type === "AWS::RDS::DBCluster") {
-      const scaling = p.ServerlessV2ScalingConfiguration as { MinCapacity?: unknown; SecondsUntilAutoPause?: unknown } | undefined;
-      if (scaling?.MinCapacity !== 0) findings.push(`${id}: Aurora MinCapacity ${String(scaling?.MinCapacity)}, not 0`);
-      if (scaling?.SecondsUntilAutoPause !== autoPause.toSeconds()) findings.push(`${id}: SecondsUntilAutoPause ${String(scaling?.SecondsUntilAutoPause)}, not ${autoPause.toSeconds()}`);
-    }
-  }
-  return findings;
-}
 
 const untaggable = [
   "AWS::Cognito::UserPoolClient",

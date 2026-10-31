@@ -100,3 +100,47 @@ jobs:
           if OWNINFRA_AUTH_STUB=1 npx next build; then echo "stub build must fail"; exit 1; fi
           npx next build
         working-directory: ${{ runner.temp }}/approvals/app
+  # `owninfra smoke` on a fresh approvals project, once over TCP and once through the Data API emulator. No secrets, no AWS.
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: owninfra
+          POSTGRES_PASSWORD: owninfra
+          POSTGRES_DB: smoke_builder
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U owninfra" --health-interval 2s --health-retries 30
+      data-api:
+        image: koxudaxi/local-data-api@sha256:98aeab6d1cef8b8ff2398d8d435cdd42f0bf3941b8aace021c174d569b8a3376 # 0.6.12
+        env:
+          ENGINE: PostgreSQLJDBC
+          POSTGRES_HOST: postgres
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: owninfra
+          POSTGRES_PASSWORD: owninfra
+          RESOURCE_ARN: arn:aws:rds:eu-north-1:000000000000:cluster:local
+          SECRET_ARN: arn:aws:secretsmanager:eu-north-1:000000000000:secret:local
+        ports: ["8080:80"]
+    env:
+      DATABASE_URL: postgres://owninfra:owninfra@localhost:5432/smoke_builder
+      CDK_DISABLE_CLI_TELEMETRY: "true"
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile && pnpm build
+      - run: node packages/cli/dist/bin.js init --example approvals "$RUNNER_TEMP/approvals"
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate
+        working-directory: ${{ runner.temp }}/approvals
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js smoke --port 3021
+        working-directory: ${{ runner.temp }}/approvals
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js smoke --port 3021 --data-api http://localhost:8080
+        working-directory: ${{ runner.temp }}/approvals

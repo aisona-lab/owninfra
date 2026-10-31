@@ -57,6 +57,13 @@ importers:
       '@owninfra/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@owninfra/constructs':
+        specifier: workspace:*
+        version: link:../constructs
+    devDependencies:
+      aws-cdk-lib:
+        specifier: 2.275.0
+        version: 2.275.0(constructs@10.8.1)
 
   packages/compiler:
     dependencies:

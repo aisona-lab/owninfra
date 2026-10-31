@@ -88,25 +88,32 @@ function run(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.Proc
   });
 }
 
-export async function dev(args: string[], io: Io, dir = process.cwd()): Promise<number> {
+/** The compiled blueprint, if the generated app is up to date with it. */
+export async function generatedProject(dir: string, io: Io) {
   const r = await compileHere(dir, io);
-  if (!r) return 1;
+  if (!r) return null;
   let lock: Lock | null;
   try {
     lock = await readLock(dir);
   } catch (e) {
     if (!(e instanceof LockError)) throw e;
     io.err(`error: ${e.message}`);
-    return 1;
+    return null;
   }
   if (!lock) {
     io.err(`No ${lockFile} here. Run 'owninfra generate' first.`);
-    return 1;
+    return null;
   }
   if (lock.irHash !== r.irHash) {
     io.err("blueprint.yaml changed since the last generate. Run 'owninfra generate' first.");
-    return 1;
+    return null;
   }
+  return r;
+}
+
+export async function dev(args: string[], io: Io, dir = process.cwd()): Promise<number> {
+  const r = await generatedProject(dir, io);
+  if (!r) return 1;
   const app = join(dir, "app");
   const env = { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? devDatabaseUrl(r.ir), OWNINFRA_AUTH_STUB: "1" };
   if (process.env.DATABASE_URL) io.out(`dev: using DATABASE_URL from the environment; skipping docker compose`);
