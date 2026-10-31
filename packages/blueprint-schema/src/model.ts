@@ -195,7 +195,7 @@ export type Permissions = ReadonlyMap<EntityName, ReadonlyMap<RoleId, Record<Cru
 export type SeedUser = { email: string; roles: NonEmpty<RoleId> };
 
 /** `deletionProtection` and `Model.auth.mfa` keep `undefined` when the blueprint leaves them unset: the schema declares no default. */
-export type Env = { account: string; region: string; seedUsers: boolean; deletionProtection?: boolean };
+export type Env = { account: string; region: string; seedUsers: boolean; deletionProtection?: boolean; maxInstances?: number };
 
 export type Mfa = "off" | "optional" | "required";
 
@@ -409,7 +409,7 @@ function build(bp: RawBlueprint, seedRows: ReadonlyMap<string, Record<string, Ca
 
   const env = (name: string): Env | undefined => {
     const e = bp.environments[name];
-    return e && { account: e.account, region: e.region, seedUsers: e.seed_users ?? false, deletionProtection: e.database?.deletion_protection };
+    return e && { account: e.account, region: e.region, seedUsers: e.seed_users ?? false, deletionProtection: e.database?.deletion_protection, maxInstances: e.compute?.max };
   };
   const users = bp.seed?.users ?? [];
   return {

@@ -4,6 +4,7 @@ import { registry } from "@/lib/(generated)/registry";
 import { auditLog, refLabels, rowLabels } from "@/lib/(generated)/repository";
 import { currentUser } from "@/lib/(generated)/session";
 import type { EntityDef } from "@/lib/(generated)/types";
+import { unlessUnavailable } from "@/lib/(generated)/errors";
 
 type Labels = { rows: Record<string, string>; refs: Record<string, Record<string, string>> };
 
@@ -17,7 +18,7 @@ function shown(entity: EntityDef | undefined, labels: Labels | undefined, key: s
 export default async function AuditPage() {
   const user = await currentUser();
   if (!user) redirect("/api/auth/signin");
-  const rows = await auditLog(user).catch(() => null);
+  const rows = await auditLog(user).catch(unlessUnavailable(null));
   if (!rows) notFound();
   const labels: Record<string, Labels> = Object.fromEntries(
     await Promise.all(registry.entities.map(async (e) => [e.entity, { rows: await rowLabels(user, e), refs: await refLabels(user, e) }] as const)),
