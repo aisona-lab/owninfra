@@ -144,3 +144,11 @@ jobs:
         working-directory: ${{ runner.temp }}/approvals
       - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js smoke --port 3021 --data-api http://localhost:8080
         working-directory: ${{ runner.temp }}/approvals
+      # A second, unrelated blueprint: only the generic steps and per-entity CRUD apply.
+      - run: mkdir "$RUNNER_TEMP/assets" && cp packages/cli/test/fixtures/smoke/assets.yaml "$RUNNER_TEMP/assets/blueprint.yaml"
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js generate
+        working-directory: ${{ runner.temp }}/assets
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js smoke --port 3022
+        working-directory: ${{ runner.temp }}/assets
+      - run: node $GITHUB_WORKSPACE/packages/cli/dist/bin.js smoke --port 3022 --data-api http://localhost:8080
+        working-directory: ${{ runner.temp }}/assets
